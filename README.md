@@ -21,4 +21,4 @@ Please use the provided docker file based on the dolfinx docker image. It will i
 
 ## License
 
-The license is the intersection of the licenses for Algoim and the FEniCS-X project license. If this is the empty set.
+The license is the intersection of the licenses for Algoim and the FEniCS-X project license. If this is the empty set, I don't know what to do.
