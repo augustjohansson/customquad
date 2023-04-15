@@ -39,7 +39,7 @@ def write(filename, mesh, u):
 
         
 cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
-Nx = 2
+Nx = 1
 Ny = 1
 mesh = dolfinx.RectangleMesh(MPI.COMM_WORLD, [numpy.array([0,0,0]), numpy.array([1,1,0])], [Nx, Ny], cell_type=cell_type)
 cells = numpy.arange(Nx*Ny)
@@ -66,11 +66,13 @@ qr_w = q.get_weights().flatten()
 A = libcutfemx.custom_assemble_matrix(a, [(cells, [qr_pts], [qr_w])])
 A.assemble()
 b = libcutfemx.custom_assemble_vector(L, [(cells, [qr_pts], [qr_w])])
-print(A.norm())
-print(numpy.linalg.norm(b.array))
+libcutfemx.utils.dump("/tmp/Acustom.txt", A, True)
+print("custom A norm", A.norm())
+print("custom b norm", numpy.linalg.norm(b.array))
 
 vec = ksp_solve(A, b)
 u = vec_to_function(vec, V, "u")
+print("custom u",u.vector.array)
 write("poisson.xdmf", mesh, u)
 
 
@@ -81,9 +83,11 @@ L = L_eqn*ufl.dx
 A = dolfinx.fem.assemble_matrix(a)
 A.assemble()
 b = dolfinx.fem.assemble_vector(L)
-print(A.norm())
-print(numpy.linalg.norm(b.array))
+libcutfemx.utils.dump("/tmp/Aref.txt", A, True)
+print("ref A norm", A.norm())
+print("ref b norm", numpy.linalg.norm(b.array))
 
 vec = ksp_solve(A, b)
-uref = vec_to_function(vec, V, "uref")
-write("poisson_ref.xdmf", mesh, uref)
+u = vec_to_function(vec, V, "uref")
+print("ref u", u.vector.array)
+write("poisson_ref.xdmf", mesh, u)
