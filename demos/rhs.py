@@ -46,15 +46,14 @@ def write(filename, mesh, u):
 cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
 Nx = 1
 Ny = 1
-mesh = dolfinx.RectangleMesh(
+mesh = dolfinx.mesh.create_rectangle(
     MPI.COMM_WORLD,
-    [numpy.array([0, 0, 0]), numpy.array([1, 1, 0])],
-    [Nx, Ny],
-    cell_type=cell_type,
-)
+    numpy.array([[0,0], [1,1]]),
+    numpy.array([Nx, Ny]),
+    cell_type)
 cells = numpy.arange(Nx * Ny)
 
-V = dolfinx.FunctionSpace(mesh, ("Lagrange", 1))
+V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
 v = ufl.TestFunction(V)
 
 # f = dolfinx.Function(V)
