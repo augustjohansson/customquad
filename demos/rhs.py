@@ -8,10 +8,10 @@ from numpy import sin, pi
 import FIAT
 from petsc4py import PETSc
 
-# Clear cache
-from shutil import rmtree
+# # Clear cache
+# from shutil import rmtree
 
-rmtree("/root/.cache/fenics", True)
+# rmtree("/root/.cache/fenics", True)
 
 
 def ksp_solve(A, b):
@@ -47,10 +47,8 @@ cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
 Nx = 1
 Ny = 1
 mesh = dolfinx.mesh.create_rectangle(
-    MPI.COMM_WORLD,
-    numpy.array([[0,0], [1,1]]),
-    numpy.array([Nx, Ny]),
-    cell_type)
+    MPI.COMM_WORLD, numpy.array([[0, 0], [1, 1]]), numpy.array([Nx, Ny]), cell_type
+)
 cells = numpy.arange(Nx * Ny)
 
 V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
@@ -62,7 +60,7 @@ v = ufl.TestFunction(V)
 # f.interpolate(rhs)
 
 # L_eqn = inner(f, v)
-L_eqn = 1*v
+L_eqn = 1 * v
 
 L = L_eqn * ufl.dx(metadata={"quadrature_rule": "runtime"})
 
@@ -70,13 +68,16 @@ degree = 1
 q = FIAT.create_quadrature(FIAT.reference_element.UFCQuadrilateral(), degree)
 qr_pts = q.get_points().flatten()
 qr_w = q.get_weights().flatten()
+# dummy
+qr_n = qr_pts
 
-b = libcutfemx.custom_assemble_vector(L, [(cells, [qr_pts], [qr_w])])
+
+b = libcutfemx.custom_assemble_vector(L, [(cells, [qr_pts], [qr_w], [qr_n])])
 print("custom b", b.array)
 print("custom b norm", numpy.linalg.norm(b.array))
 
 # Reference
-L = L_eqn * ufl.dx
-b = dolfinx.fem.assemble_vector(L)
-print("ref b", b.array)
-print("ref b norm", numpy.linalg.norm(b.array))
+Lref = L_eqn * ufl.dx
+bref = dolfinx.fem.petsc.assemble_vector(dolfinx.fem.form(Lref))
+print("bref", bref.array)
+print("bref norm", numpy.linalg.norm(bref.array))
