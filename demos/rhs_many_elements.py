@@ -81,10 +81,11 @@ for k, rhs in enumerate([rhs1, rhs2, rhs3, rhs4]):
 
     # Runtime quadrature
     L = L_eqn * ufl.dx(metadata={"quadrature_rule": "runtime"})
-    degree = 2
+    degree = 4
     q = FIAT.create_quadrature(FIAT.reference_element.UFCQuadrilateral(), degree)
     # qr_pts should be of size == number of integral_ids
     # qr_pts[i] should be a list of qr points equal the number of cells
+    print(f"degree={degree} gave", len(q.get_weights()), "quadrature points")
     qr_pts = numpy.tile(q.get_points().flatten(), [num_cells, 1])
     qr_w = numpy.tile(q.get_weights().flatten(), [num_cells, 1])
     qr_n = qr_pts  # dummy
