@@ -60,8 +60,8 @@ def write(filename, mesh, u):
 
 
 cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
-Nx = 2
-Ny = 1
+Nx = 3
+Ny = 2
 mesh = dolfinx.mesh.create_rectangle(
     MPI.COMM_WORLD, numpy.array([[0, 0], [1, 1]]), numpy.array([Nx, Ny]), cell_type
 )
