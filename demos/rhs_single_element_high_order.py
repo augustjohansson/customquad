@@ -105,7 +105,7 @@ Ny = 1
 # )
 
 
-order = 1
+order = 2
 points = get_points(order)
 cells = get_cells(order)
 
