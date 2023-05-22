@@ -15,6 +15,41 @@ from petsc4py import PETSc
 # rmtree("/root/.cache/fenics", True)
 
 
+# See test_higher_order_mesh.py:test_quadrilateral_mesh
+def coord_to_vertex(x, y):
+    return (order + 1) * y + x
+
+
+def get_points(order):
+    points = []
+    points += [[i / order, 0] for i in range(order + 1)]
+    for j in range(1, order):
+        points += [[i / order + 0.1, j / order] for i in range(order + 1)]
+    points += [[j / order, 1] for j in range(order + 1)]
+    return points
+
+
+def get_cells(order):
+    cell = [
+        coord_to_vertex(i, j)
+        for i, j in [(0, 0), (order, 0), (0, order), (order, order)]
+    ]
+    if order > 1:
+        for i in range(1, order):
+            cell.append(coord_to_vertex(i, 0))
+        for i in range(1, order):
+            cell.append(coord_to_vertex(0, i))
+        for i in range(1, order):
+            cell.append(coord_to_vertex(order, i))
+        for i in range(1, order):
+            cell.append(coord_to_vertex(i, order))
+
+        for j in range(1, order):
+            for i in range(1, order):
+                cell.append(coord_to_vertex(i, j))
+    return [cell]
+
+
 def rhs1(x):
     return x[0] ** 0
 
@@ -63,15 +98,20 @@ def write(filename, mesh, u):
 cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
 Nx = 1
 Ny = 1
+
+
 # mesh = dolfinx.mesh.create_rectangle(
 #     MPI.COMM_WORLD, numpy.array([[0, 0], [1, 1]]), numpy.array([Nx, Ny]), cell_type
 # )
+
+
 order = 1
-cells = [[0, 1, 2, 3]]
-points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+points = get_points(order)
+cells = get_cells(order)
+
 domain = ufl.Mesh(
     basix.ufl_wrapper.create_vector_element(
-        "Lagrange",
+        "Q",
         "quadrilateral",
         order,
         gdim=2,
