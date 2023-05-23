@@ -20,6 +20,9 @@ def coord_to_vertex(x, y):
     return (order + 1) * y + x
 
 
+flatten = lambda l: [item for sublist in l for item in sublist]
+
+
 def get_points(order, Nx, Ny):
     points = []
     points += [[i / order, 0] for i in range(order + 1)]
@@ -27,8 +30,24 @@ def get_points(order, Nx, Ny):
         points += [[i / order + 0.1, j / order] for i in range(order + 1)]
     points += [[j / order, 1] for j in range(order + 1)]
 
-    # Combine to several cells
+    # Combine to several cells (test first w/o unique vertices)
     all_points = []
+    pnp = numpy.array(points)
+
+    ex = numpy.array([1.0, 0.0])
+    for i in range(Nx):
+        ptmp = pnp + i * ex
+        all_points.append(ptmp.tolist())
+
+    all_points_x = flatten(all_points)
+
+    ey = numpy.array([0.0, 1.0])
+    for j in range(1, Ny):
+        for q in all_points_x:
+            ptmp = numpy.array(q) + j * ey
+            all_points.append([ptmp.tolist()])
+
+    all_points = flatten(all_points)
 
     return all_points
 
@@ -52,10 +71,20 @@ def get_cells(order, Nx, Ny):
             for i in range(1, order):
                 cell.append(coord_to_vertex(i, j))
 
-    # Combine to several cells
+    # Combine to several cells as done for the points
     cells = []
+    cnp = numpy.array(cell)
+    n = len(cell)
+    for i in range(Nx):
+        ctmp = cnp + n * i
+        cells.append(ctmp.tolist())
+    for j in range(Ny + 1):
+        ctmp = cnp + n * Nx + j * Ny
+        cells.append(ctmp.tolist())
+    breakpoint()
 
-    return [cell]
+    assert len(cells) == Nx * Ny
+    return cells
 
 
 def rhs1(x):
@@ -106,10 +135,19 @@ def write(filename, mesh, u):
 cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
 Nx = 3
 Ny = 2
-# mesh = dolfinx.mesh.create_rectangle(
-#     MPI.COMM_WORLD, numpy.array([[0, 0], [1, 1]]), numpy.array([Nx, Ny]), cell_type
-# )
-
+order = 1
+points = get_points(order, Nx, Ny)
+cells = get_cells(order, Nx, Ny)
+domain = ufl.Mesh(
+    basix.ufl_wrapper.create_vector_element(
+        "Q",
+        "quadrilateral",
+        order,
+        gdim=2,
+        lagrange_variant=basix.LagrangeVariant.equispaced,
+    )
+)
+mesh = dolfinx.mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain)
 
 tdim = 2
 num_cells = mesh.topology.index_map(tdim).size_local
@@ -119,7 +157,7 @@ V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
 v = ufl.TestFunction(V)
 
 for k, rhs in enumerate([rhs1, rhs2, rhs3, rhs4]):
-    print("case", k)
+    print("\ncase", k)
     f = dolfinx.fem.Function(V)
     f.interpolate(rhs)
 
