@@ -27,7 +27,8 @@ def get_points(order, Nx, Ny):
     points = []
     points += [[i / order, 0] for i in range(order + 1)]
     for j in range(1, order):
-        points += [[i / order + 0.1, j / order] for i in range(order + 1)]
+        # points += [[i / order + 0.1, j / order] for i in range(order + 1)]
+        points += [[i / order + 0.0, j / order] for i in range(order + 1)]
     points += [[j / order, 1] for j in range(order + 1)]
 
     # Combine to several cells (test first w/o unique vertices)
@@ -49,7 +50,7 @@ def get_points(order, Nx, Ny):
 
     all_points = flatten(all_points)
 
-    # print(all_points)
+    print(all_points)
     # breakpoint()
 
     assert len(all_points) == (order + 1) ** 2 * Nx * Ny
@@ -93,7 +94,7 @@ def get_cells(order, Nx, Ny):
             ctmp = numpy.array(cc) + j * offset
             all_cells.append(ctmp.tolist())
 
-    # print(all_cells)
+    print(all_cells)
     # breakpoint()
 
     assert len(all_cells) == Nx * Ny
@@ -149,7 +150,7 @@ def write(filename, mesh, u):
 cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
 Nx = 2
 Ny = 3
-order = 1
+order = 2
 points = get_points(order, Nx, Ny)
 cells = get_cells(order, Nx, Ny)
 domain = ufl.Mesh(
@@ -167,7 +168,7 @@ tdim = 2
 num_cells = mesh.topology.index_map(tdim).size_local
 cells = numpy.arange(num_cells)
 
-V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
+V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", order))
 v = ufl.TestFunction(V)
 
 for k, rhs in enumerate([rhs1, rhs2, rhs3, rhs4]):
