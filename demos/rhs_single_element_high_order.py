@@ -96,8 +96,6 @@ def write(filename, mesh, u):
 
 
 cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
-Nx = 1
-Ny = 1
 order = 2
 points = get_points(order)
 cells = get_cells(order)
