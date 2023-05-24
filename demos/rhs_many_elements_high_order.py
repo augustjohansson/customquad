@@ -49,6 +49,11 @@ def get_points(order, Nx, Ny):
 
     all_points = flatten(all_points)
 
+    # print(all_points)
+    # breakpoint()
+
+    assert len(all_points) == (order + 1) ** 2 * Nx * Ny
+
     return all_points
 
 
@@ -72,19 +77,28 @@ def get_cells(order, Nx, Ny):
                 cell.append(coord_to_vertex(i, j))
 
     # Combine to several cells as done for the points
-    cells = []
+    all_cells = []
     cnp = numpy.array(cell)
     n = len(cell)
+
     for i in range(Nx):
         ctmp = cnp + n * i
-        cells.append(ctmp.tolist())
-    for j in range(Ny + 1):
-        ctmp = cnp + n * Nx + j * Ny
-        cells.append(ctmp.tolist())
-    breakpoint()
+        all_cells.append(ctmp.tolist())
 
-    assert len(cells) == Nx * Ny
-    return cells
+    cells_x = all_cells.copy()
+    offset = numpy.array(cells_x).max() + 1
+
+    for j in range(1, Ny):
+        for cc in cells_x:
+            ctmp = numpy.array(cc) + j * offset
+            all_cells.append(ctmp.tolist())
+
+    # print(all_cells)
+    # breakpoint()
+
+    assert len(all_cells) == Nx * Ny
+
+    return all_cells
 
 
 def rhs1(x):
@@ -133,8 +147,8 @@ def write(filename, mesh, u):
 
 
 cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
-Nx = 3
-Ny = 2
+Nx = 2
+Ny = 3
 order = 1
 points = get_points(order, Nx, Ny)
 cells = get_cells(order, Nx, Ny)
