@@ -24,7 +24,8 @@ def get_points(order):
     points = []
     points += [[i / order, 0] for i in range(order + 1)]
     for j in range(1, order):
-        points += [[i / order + 0.1, j / order] for i in range(order + 1)]
+        # points += [[i / order + 0.1, j / order] for i in range(order + 1)]
+        points += [[i / order + 0.0, j / order] for i in range(order + 1)]
     points += [[j / order, 1] for j in range(order + 1)]
     return points
 
@@ -99,6 +100,11 @@ cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
 order = 2
 points = get_points(order)
 cells = get_cells(order)
+
+print(points)
+print(cells)
+
+
 domain = ufl.Mesh(
     basix.ufl_wrapper.create_vector_element(
         "Q",
