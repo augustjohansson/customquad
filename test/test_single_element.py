@@ -10,30 +10,8 @@ from petsc4py import PETSc
 import FIAT
 
 
-def single_tensor_product_element(
-    cell, polynomial_order, quadrature_degree, xmin, xmax, rhs
-):
-    if cell == "quadrilateral":
-        cell_type = dolfinx.mesh.CellType.quadrilateral
-        fiat_element = FIAT.reference_element.UFCQuadrilateral()
-        create_mesh = dolfinx.mesh.create_rectangle
-        gdim = 2
-    elif cell == "hexahedron":
-        cell_type = dolfinx.mesh.CellType.hexahedron
-        fiat_element = FIAT.reference_element.UFCHexahedron()
-        create_mesh = dolfinx.mesh.create_box
-        gdim = 3
-    else:
-        RuntimeError(f"Cell {cell} is not supported")
-
-    N = [1] * gdim
-    mesh = create_mesh(
-        MPI.COMM_WORLD,
-        np.array([xmin[0:gdim], xmax[0:gdim]]),
-        np.array(N),
-        cell_type,
-    )
-
+def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree, rhs):
+    # Setup integral
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
     v = ufl.TestFunction(V)
     f = dolfinx.fem.Function(V)
@@ -72,18 +50,60 @@ def rhs4(x):
     return exp(x[0] * x[1])
 
 
-@pytest.mark.parametrize("cell", ["quadrilateral", "hexahedron"])
-@pytest.mark.parametrize(
-    ("polynomial_order", "quadrature_degree"),
-    [(1, 2)],  # , (2, 2), (3, 2), (4, 3), (5, 4)]
-)
-@pytest.mark.parametrize("xmin", [[0, 0, 0], [-0.25, -1.25, 0.25]])
-@pytest.mark.parametrize("xmax", [[1, 1, 1], [1.25, 7.5, 4.4]])
+# @pytest.mark.parametrize("cell", ["quadrilateral", "hexahedron"])
+# @pytest.mark.parametrize(
+#     ("polynomial_order", "quadrature_degree"),
+#     [(1, 2)],  # , (2, 2), (3, 2), (4, 3), (5, 4)]
+# )
+# @pytest.mark.parametrize("xmin", [[0, 0, 0], [-0.25, -1.25, 0.25]])
+# @pytest.mark.parametrize("xmax", [[1, 1, 1], [1.25, 7.5, 4.4]])
+# @pytest.mark.parametrize("rhs", [rhs1, rhs2, rhs3, rhs4])
+# def test_tensor_product_element(
+#     cell, polynomial_order, quadrature_degree, xmin, xmax, rhs
+# ):
+#     b, b_ref = single_tensor_product_element(
+#         cell, polynomial_order, quadrature_degree, xmin, xmax, rhs
+#     )
+#     assert np.linalg.norm(b.array - b_ref.array) / np.linalg.norm(b_ref.array) < 1e-10
+
+
+@pytest.mark.parametrize("xmin", [[0, 0], [-0.25, -10.25]])
+@pytest.mark.parametrize("xmax", [[1, 1], [1.25, 17.5]])
 @pytest.mark.parametrize("rhs", [rhs1, rhs2, rhs3, rhs4])
-def test_tensor_product_element(
-    cell, polynomial_order, quadrature_degree, xmin, xmax, rhs
-):
-    b, b_ref = single_tensor_product_element(
-        cell, polynomial_order, quadrature_degree, xmin, xmax, rhs
+def test_single_linear_quad(xmin, xmax, rhs):
+    polynomial_order = 1
+    quadrature_degree = 2
+    cell_type = dolfinx.mesh.CellType.quadrilateral
+    mesh = dolfinx.mesh.create_rectangle(
+        MPI.COMM_WORLD,
+        np.array([xmin, xmax]),
+        np.array([1, 1]),
+        cell_type,
+    )
+    fiat_element = FIAT.reference_element.UFCQuadrilateral()
+
+    b, b_ref = assemble_vector_test(
+        mesh, fiat_element, polynomial_order, quadrature_degree, rhs
+    )
+    assert np.linalg.norm(b.array - b_ref.array) / np.linalg.norm(b_ref.array) < 1e-10
+
+
+@pytest.mark.parametrize("xmin", [[0, 0, 0], [-0.25, -10.25, 0.25]])
+@pytest.mark.parametrize("xmax", [[1, 1, 1], [1.25, 17.5, 4.4]])
+@pytest.mark.parametrize("rhs", [rhs1, rhs2, rhs3, rhs4])
+def test_single_linear_hex(xmin, xmax, rhs):
+    polynomial_order = 1
+    quadrature_degree = 2
+    cell_type = dolfinx.mesh.CellType.hexahedron
+    mesh = dolfinx.mesh.create_box(
+        MPI.COMM_WORLD,
+        np.array([xmin, xmax]),
+        np.array([1, 1, 1]),
+        cell_type,
+    )
+    fiat_element = FIAT.reference_element.UFCHexahedron()
+
+    b, b_ref = assemble_vector_test(
+        mesh, fiat_element, polynomial_order, quadrature_degree, rhs
     )
     assert np.linalg.norm(b.array - b_ref.array) / np.linalg.norm(b_ref.array) < 1e-10
