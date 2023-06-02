@@ -7,26 +7,17 @@ from mpi4py import MPI
 import numpy as np
 from numpy import sin, pi, exp
 from petsc4py import PETSc
-
 import FIAT
 
 
-def single_element_case(cell, polynomial_order, quadrature_degree, xmin, xmax, rhs):
-    if cell == "triangle":
-        cell_type = dolfinx.mesh.CellType.triangle
-        fiat_element = FIAT.reference_element.UFCTriangle()
-        create_mesh = dolfinx.mesh.create_rectangle
-        gdim = 2
-    elif cell == "quadrilateral":
+def single_tensor_product_element(
+    cell, polynomial_order, quadrature_degree, xmin, xmax, rhs
+):
+    if cell == "quadrilateral":
         cell_type = dolfinx.mesh.CellType.quadrilateral
         fiat_element = FIAT.reference_element.UFCQuadrilateral()
         create_mesh = dolfinx.mesh.create_rectangle
         gdim = 2
-    elif cell == "tetrahedron":
-        cell_type = dolfinx.mesh.CellType.tetrahedron
-        fiat_element = FIAT.reference_element.UFCTetrahedron()
-        create_mesh = dolfinx.mesh.create_box
-        gdim = 3
     elif cell == "hexahedron":
         cell_type = dolfinx.mesh.CellType.hexahedron
         fiat_element = FIAT.reference_element.UFCHexahedron()
@@ -35,14 +26,14 @@ def single_element_case(cell, polynomial_order, quadrature_degree, xmin, xmax, r
     else:
         RuntimeError(f"Cell {cell} is not supported")
 
-    Nx = 1
-    Ny = 1
+    N = [1] * gdim
     mesh = create_mesh(
         MPI.COMM_WORLD,
         np.array([xmin[0:gdim], xmax[0:gdim]]),
-        np.array([Nx, Ny]),
+        np.array(N),
         cell_type,
     )
+
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
     v = ufl.TestFunction(V)
     f = dolfinx.fem.Function(V)
@@ -51,7 +42,7 @@ def single_element_case(cell, polynomial_order, quadrature_degree, xmin, xmax, r
 
     # Runtime quadrature
     L = L_eqn * ufl.dx(metadata={"quadrature_rule": "runtime"})
-    cells = np.arange(Nx * Ny)
+    cells = np.arange(1)
     q = FIAT.create_quadrature(fiat_element, quadrature_degree)
     qr_pts = q.get_points().flatten()
     qr_w = q.get_weights().flatten()
@@ -81,10 +72,7 @@ def rhs4(x):
     return exp(x[0] * x[1])
 
 
-# @pytest.mark.parametrize(
-#     "cell", ["triangle", "quadrilateral", "tetrahedron", "hexahedron"]
-# )
-@pytest.mark.parametrize("cell", ["quadrilateral"])
+@pytest.mark.parametrize("cell", ["quadrilateral", "hexahedron"])
 @pytest.mark.parametrize(
     ("polynomial_order", "quadrature_degree"),
     [(1, 2)],  # , (2, 2), (3, 2), (4, 3), (5, 4)]
@@ -92,8 +80,10 @@ def rhs4(x):
 @pytest.mark.parametrize("xmin", [[0, 0, 0], [-0.25, -1.25, 0.25]])
 @pytest.mark.parametrize("xmax", [[1, 1, 1], [1.25, 7.5, 4.4]])
 @pytest.mark.parametrize("rhs", [rhs1, rhs2, rhs3, rhs4])
-def test_single_element(cell, polynomial_order, quadrature_degree, xmin, xmax, rhs):
-    b, b_ref = single_element_case(
+def test_tensor_product_element(
+    cell, polynomial_order, quadrature_degree, xmin, xmax, rhs
+):
+    b, b_ref = single_tensor_product_element(
         cell, polynomial_order, quadrature_degree, xmin, xmax, rhs
     )
     assert np.linalg.norm(b.array - b_ref.array) / np.linalg.norm(b_ref.array) < 1e-10
