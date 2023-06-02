@@ -9,6 +9,7 @@ from numpy import sin, pi, exp
 from petsc4py import PETSc
 import FIAT
 
+# FIXME move common routines somewhere
 
 def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree, rhs):
     # Setup integrand
@@ -81,13 +82,13 @@ def test_linear_hexes(N, xmin, xmax, rhs):
     polynomial_order = 1
     quadrature_degree = 2
     cell_type = dolfinx.mesh.CellType.hexahedron
+    fiat_element = FIAT.reference_element.UFCHexahedron()
     mesh = dolfinx.mesh.create_box(
         MPI.COMM_WORLD,
         np.array([xmin, xmax]),
         np.array(N),
         cell_type,
     )
-    fiat_element = FIAT.reference_element.UFCHexahedron()
 
     b, b_ref = assemble_vector_test(
         mesh, fiat_element, polynomial_order, quadrature_degree, rhs
