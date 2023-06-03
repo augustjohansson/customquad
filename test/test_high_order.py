@@ -1,60 +1,16 @@
 import pytest
 import basix
 import dolfinx
-import libcutfemx
 import ufl
-from ufl import grad, inner
 from mpi4py import MPI
 import numpy as np
-from numpy import sin, pi, exp
-from petsc4py import PETSc
 import FIAT
+from common import assemble_vector_test, rhs1, rhs2, rhs3, rhs4
 
 # Mesh generation copied from test_quadrilateral_mesh from
 # test_higher_order_mesh.py in dolfinx. And the same for the hexes.
 
 flatten = lambda l: [item for sublist in l for item in sublist]
-
-
-def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree, rhs):
-    # Setup integrand
-    V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
-    v = ufl.TestFunction(V)
-    f = dolfinx.fem.Function(V)
-    f.interpolate(rhs)
-    L_eqn = inner(f, v)
-
-    # Runtime quadrature
-    L = L_eqn * ufl.dx(metadata={"quadrature_rule": "runtime"})
-    num_cells = mesh.topology.index_map(mesh.topology.dim).size_local
-    cells = np.arange(num_cells)
-    q = FIAT.create_quadrature(fiat_element, quadrature_degree)
-    qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
-    qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
-    qr_n = qr_pts  # dummy
-    b = libcutfemx.custom_assemble_vector(L, [(cells, qr_pts, qr_w, qr_n)])
-
-    # Reference
-    L_ref = L_eqn * ufl.dx
-    b_ref = dolfinx.fem.petsc.assemble_vector(dolfinx.fem.form(L_ref))
-
-    return b, b_ref
-
-
-def rhs1(x):
-    return x[0] ** 0
-
-
-def rhs2(x):
-    return x[0]
-
-
-def rhs3(x):
-    return sin(pi * x[0]) * sin(pi * x[1])
-
-
-def rhs4(x):
-    return exp(x[0] * x[1])
 
 
 @pytest.mark.parametrize(
@@ -134,7 +90,6 @@ def test_high_order_quads(polynomial_order, quadrature_degree, rhs):
 
         return all_cells
 
-    cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
     fiat_element = FIAT.reference_element.UFCQuadrilateral()
     Nx = 2
     Ny = 3
@@ -307,7 +262,6 @@ def test_high_order_hexes(polynomial_order, quadrature_degree, rhs):
 
         return all_cells
 
-    cell_type = dolfinx.cpp.mesh.CellType.hexahedron
     fiat_element = FIAT.reference_element.UFCHexahedron()
     Nx = 2
     Ny = 3
