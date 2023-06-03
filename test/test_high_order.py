@@ -5,7 +5,7 @@ import ufl
 from mpi4py import MPI
 import numpy as np
 import FIAT
-from common import assemble_vector_test, rhs1, rhs2, rhs3, rhs4
+from common import assemble_scalar_test, assemble_vector_test, fcn1, fcn2, fcn3, fcn4
 
 # Mesh generation copied from test_quadrilateral_mesh from
 # test_higher_order_mesh.py in dolfinx. And the same for the hexes.
@@ -16,8 +16,8 @@ flatten = lambda l: [item for sublist in l for item in sublist]
 @pytest.mark.parametrize(
     ("polynomial_order", "quadrature_degree"), [(1, 2), (2, 4)]  # , (3, 2), (4, 3)]
 )
-@pytest.mark.parametrize("rhs", [rhs1, rhs2, rhs3, rhs4])
-def test_high_order_quads(polynomial_order, quadrature_degree, rhs):
+@pytest.mark.parametrize("fcn", [fcn1, fcn2, fcn3, fcn4])
+def test_high_order_quads(polynomial_order, quadrature_degree, fcn):
     def coord_to_vertex(x, y):
         return (polynomial_order + 1) * y + x
 
@@ -107,7 +107,7 @@ def test_high_order_quads(polynomial_order, quadrature_degree, rhs):
     mesh = dolfinx.mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain)
 
     b, b_ref = assemble_vector_test(
-        mesh, fiat_element, polynomial_order, quadrature_degree, rhs
+        mesh, fiat_element, polynomial_order, quadrature_degree, fcn
     )
     assert np.linalg.norm(b.array - b_ref.array) / np.linalg.norm(b_ref.array) < 1e-10
 
@@ -115,8 +115,8 @@ def test_high_order_quads(polynomial_order, quadrature_degree, rhs):
 @pytest.mark.parametrize(
     ("polynomial_order", "quadrature_degree"), [(1, 2), (2, 4)]  # , (3, 2), (4, 3)]
 )
-@pytest.mark.parametrize("rhs", [rhs1, rhs2, rhs3, rhs4])
-def test_high_order_hexes(polynomial_order, quadrature_degree, rhs):
+@pytest.mark.parametrize("fcn", [fcn1, fcn2, fcn3, fcn4])
+def test_high_order_hexes(polynomial_order, quadrature_degree, fcn):
     def coord_to_vertex(x, y, z):
         return (polynomial_order + 1) ** 2 * z + (polynomial_order + 1) * y + x
 
@@ -281,6 +281,6 @@ def test_high_order_hexes(polynomial_order, quadrature_degree, rhs):
     mesh = dolfinx.mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain)
 
     b, b_ref = assemble_vector_test(
-        mesh, fiat_element, polynomial_order, quadrature_degree, rhs
+        mesh, fiat_element, polynomial_order, quadrature_degree, fcn
     )
     assert np.linalg.norm(b.array - b_ref.array) / np.linalg.norm(b_ref.array) < 1e-10
