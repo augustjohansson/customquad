@@ -10,7 +10,8 @@ from numpy import sin, pi, exp
 from petsc4py import PETSc
 import FIAT
 
-# Mesh generation copied from test_quadrilateral_mesh test_higher_order_mesh.py
+# Mesh generation copied from test_quadrilateral_mesh from
+# test_higher_order_mesh.py in dolfinx. And the same for the hexes.
 
 flatten = lambda l: [item for sublist in l for item in sublist]
 
@@ -61,8 +62,8 @@ def rhs4(x):
 )
 @pytest.mark.parametrize("rhs", [rhs1, rhs2, rhs3, rhs4])
 def test_high_order_quads(polynomial_order, quadrature_degree, rhs):
-    def coord_to_vertex(order, x, y):
-        return (order + 1) * y + x
+    def coord_to_vertex(x, y):
+        return (polynomial_order + 1) * y + x
 
     def get_points(order, Nx, Ny):
         points = []
@@ -79,7 +80,6 @@ def test_high_order_quads(polynomial_order, quadrature_degree, rhs):
         for i in range(Nx):
             ptmp = pnp + i * ex
             all_points.append(ptmp.tolist())
-
         all_points_x = flatten(all_points)
 
         ey = np.array([0.0, 1.0])
@@ -87,7 +87,6 @@ def test_high_order_quads(polynomial_order, quadrature_degree, rhs):
             for q in all_points_x:
                 ptmp = np.array(q) + j * ey
                 all_points.append([ptmp.tolist()])
-
         all_points = flatten(all_points)
 
         assert len(all_points) == (order + 1) ** 2 * Nx * Ny
@@ -95,23 +94,24 @@ def test_high_order_quads(polynomial_order, quadrature_degree, rhs):
         return all_points
 
     def get_cells(order, Nx, Ny):
+        # Define a cell using DOLFINx ordering
         cell = [
-            coord_to_vertex(order, i, j)
+            coord_to_vertex(i, j)
             for i, j in [(0, 0), (order, 0), (0, order), (order, order)]
         ]
         if order > 1:
             for i in range(1, order):
-                cell.append(coord_to_vertex(order, i, 0))
+                cell.append(coord_to_vertex(i, 0))
             for i in range(1, order):
-                cell.append(coord_to_vertex(order, 0, i))
+                cell.append(coord_to_vertex(0, i))
             for i in range(1, order):
-                cell.append(coord_to_vertex(order, order, i))
+                cell.append(coord_to_vertex(order, i))
             for i in range(1, order):
-                cell.append(coord_to_vertex(order, i, order))
+                cell.append(coord_to_vertex(i, order))
 
             for j in range(1, order):
                 for i in range(1, order):
-                    cell.append(coord_to_vertex(order, i, j))
+                    cell.append(coord_to_vertex(i, j))
 
         # Combine to several cells as done for the points
         all_cells = []
@@ -163,7 +163,7 @@ def test_high_order_quads(polynomial_order, quadrature_degree, rhs):
 @pytest.mark.parametrize("rhs", [rhs1, rhs2, rhs3, rhs4])
 def test_high_order_hexes(polynomial_order, quadrature_degree, rhs):
     def coord_to_vertex(x, y, z):
-        return (order + 1) ** 2 * z + (order + 1) * y + x
+        return (polynomial_order + 1) ** 2 * z + (polynomial_order + 1) * y + x
 
     def get_points(order, Nx, Ny, Nz):
         points = []
@@ -185,7 +185,127 @@ def test_high_order_hexes(polynomial_order, quadrature_degree, rhs):
         ]
 
         # Combine to several cells (vertices doesn't have to be unique)
-        breakpoint()
+        all_points = []
+        pnp = np.array(points)
+
+        ex = np.array([1, 0, 0])
+        for i in range(Nx):
+            ptmp = pnp + i * ex
+            all_points.append(ptmp.tolist())  # extend?
+        all_points_x = flatten(all_points)
+
+        ey = np.array([0, 1, 0])
+        for j in range(1, Ny):
+            for q in all_points_x:
+                ptmp = np.array(q) + j * ey
+                all_points.append([ptmp.tolist()])
+        all_points_xy = flatten(all_points)
+
+        ez = np.array([0, 0, 1])
+        for k in range(1, Nz):
+            for q in all_points_xy:
+                ptmp = np.array(q) + k * ez
+                all_points.append([ptmp.tolist()])
+        all_points = flatten(all_points)
+
+        assert len(all_points) == (order + 1) ** 3 * Nx * Ny * Nz
+
+        return all_points
+
+    def get_cells(order, Nx, Ny, Nz):
+        # Define a cell using DOLFINx ordering
+        cell = [
+            coord_to_vertex(x, y, z)
+            for x, y, z in [
+                (0, 0, 0),
+                (order, 0, 0),
+                (0, order, 0),
+                (order, order, 0),
+                (0, 0, order),
+                (order, 0, order),
+                (0, order, order),
+                (order, order, order),
+            ]
+        ]
+
+        if order > 1:
+            for i in range(1, order):
+                cell.append(coord_to_vertex(i, 0, 0))
+            for i in range(1, order):
+                cell.append(coord_to_vertex(0, i, 0))
+            for i in range(1, order):
+                cell.append(coord_to_vertex(0, 0, i))
+            for i in range(1, order):
+                cell.append(coord_to_vertex(order, i, 0))
+            for i in range(1, order):
+                cell.append(coord_to_vertex(order, 0, i))
+            for i in range(1, order):
+                cell.append(coord_to_vertex(i, order, 0))
+            for i in range(1, order):
+                cell.append(coord_to_vertex(0, order, i))
+            for i in range(1, order):
+                cell.append(coord_to_vertex(order, order, i))
+            for i in range(1, order):
+                cell.append(coord_to_vertex(i, 0, order))
+            for i in range(1, order):
+                cell.append(coord_to_vertex(0, i, order))
+            for i in range(1, order):
+                cell.append(coord_to_vertex(order, i, order))
+            for i in range(1, order):
+                cell.append(coord_to_vertex(i, order, order))
+
+            for j in range(1, order):
+                for i in range(1, order):
+                    cell.append(coord_to_vertex(i, j, 0))
+            for j in range(1, order):
+                for i in range(1, order):
+                    cell.append(coord_to_vertex(i, 0, j))
+            for j in range(1, order):
+                for i in range(1, order):
+                    cell.append(coord_to_vertex(0, i, j))
+            for j in range(1, order):
+                for i in range(1, order):
+                    cell.append(coord_to_vertex(order, i, j))
+            for j in range(1, order):
+                for i in range(1, order):
+                    cell.append(coord_to_vertex(i, order, j))
+            for j in range(1, order):
+                for i in range(1, order):
+                    cell.append(coord_to_vertex(i, j, order))
+
+            for k in range(1, order):
+                for j in range(1, order):
+                    for i in range(1, order):
+                        cell.append(coord_to_vertex(i, j, k))
+
+        # Combine to several cells as done for the points
+        all_cells = []
+        cnp = np.array(cell)
+        n = len(cell)
+
+        for i in range(Nx):
+            ctmp = cnp + n * i
+            all_cells.append(ctmp.tolist())
+
+        cells_x = all_cells.copy()
+        offset_x = np.array(cells_x).max() + 1
+
+        for j in range(1, Ny):
+            for cc in cells_x:
+                ctmp = np.array(cc) + j * offset_x
+                all_cells.append(ctmp.tolist())
+
+        cells_xy = all_cells.copy()
+        offset_xy = np.array(cells_xy).max() + 1
+
+        for k in range(1, Nz):
+            for cc in cells_xy:
+                ctmp = np.array(cc) + k * offset_xy
+                all_cells.append(ctmp.tolist())
+
+        assert len(all_cells) == Nx * Ny * Nz
+
+        return all_cells
 
     cell_type = dolfinx.cpp.mesh.CellType.hexahedron
     fiat_element = FIAT.reference_element.UFCHexahedron()
@@ -203,6 +323,7 @@ def test_high_order_hexes(polynomial_order, quadrature_degree, rhs):
             lagrange_variant=basix.LagrangeVariant.equispaced,
         )
     )
+
     mesh = dolfinx.mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain)
 
     b, b_ref = assemble_vector_test(
