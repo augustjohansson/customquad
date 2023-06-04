@@ -73,7 +73,7 @@ def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree
     return b, b_ref
 
 
-def assemble_matrix_test():
+def assemble_matrix_test(mesh, fiat_element, polynomial_order, quadrature_degree, fcn):
     # Setup integrand
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
     u = ufl.TrialFunction(V)
