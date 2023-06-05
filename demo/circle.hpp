@@ -1,7 +1,6 @@
-#include <algoim/algoim_quad.hpp>
-#include <blitz/array.h>
 #include <cassert>
 #include <fstream>
+#include "quadrature_general.hpp"
 
 template <int gdim>
 struct Sphere
@@ -11,24 +10,26 @@ struct Sphere
   const double zc = 0;
   const double R = 1;
 
-  template <typename T>
-  T operator()(const blitz::TinyVector<T, gdim>& x) const
+  template<typename T>
+  T operator()(const algoim::uvector<T, gdim>& x) const
   {
-    if (gdim == 2)
+    if constexpr (gdim == 2)
       return (x(0) - xc) * (x(0) - xc) + (x(1) - yc) * (x(1) - yc) - R * R;
     else
-      return (x(0) - xc) * (x(0) - xc) + (x(1) - yc) * (x(1) - yc)
-             + (x(2) - zc) * (x(2) - zc) - R * R;
+      return (x(0) - xc) * (x(0) - xc) \
+	+ (x(1) - yc) * (x(1) - yc) \
+	+ (x(2) - zc) * (x(2) - zc) - R * R;
   }
 
-  template <typename T>
-  blitz::TinyVector<T, gdim> grad(const blitz::TinyVector<T, gdim>& x) const
+  template<typename T>
+  algoim::uvector<T, gdim> grad(const algoim::uvector<T, gdim>& x) const
   {
-    if (gdim == 2)
-      return blitz::TinyVector<T, gdim>(2.0 * (x(0) - xc), 2.0 * (x(1) - yc));
+    if constexpr (gdim == 2)
+      return algoim::uvector<T, gdim>(2.0 * (x(0) - xc), 2.0 * (x(1) - yc));
     else
-      return blitz::TinyVector<T, gdim>(2.0 * (x(0) - xc), 2.0 * (x(1) - yc),
-                                     2.0 * (x(2) - zc));
+      return algoim::uvector<T, gdim>(2.0 * (x(0) - xc),
+				      2.0 * (x(1) - yc),
+				      2.0 * (x(2) - zc));
   }
 };
 
@@ -108,11 +109,11 @@ void run(const std::vector<double>& LLx, const std::vector<double>& LLy,
 
   for (std::size_t cell_no = 0; cell_no < num_cells; ++cell_no)
   {
-    const blitz::TinyVector<double, 2> a = {LLx[cell_no], LLy[cell_no]};
-    const blitz::TinyVector<double, 2> b = {URx[cell_no], URy[cell_no]};
+    const algoim::uvector<double, 2> min(LLx[cell_no], LLy[cell_no]);
+    const algoim::uvector<double, 2> max(URx[cell_no], URy[cell_no]);
 
-    const auto q_bdry = Algoim::quadGen<2>(
-        phi, Algoim::BoundingBox<double, 2>(a, b), dim_bdry, side, degree);
+    const auto q_bdry = algoim::quadGen<2>(
+        phi, algoim::HyperRectangle<double, 2>(min, max), dim_bdry, side, degree);
     if (q_bdry.nodes.size())
     {
       // Cut cell
@@ -127,14 +128,14 @@ void run(const std::vector<double>& LLx, const std::vector<double>& LLy,
       {
         const double x = qr_pts_bdry[cell_no][gdim * k];
         const double y = qr_pts_bdry[cell_no][gdim * k + 1];
-        const auto grad = phi.grad(blitz::TinyVector<double, 2>(x, y));
+        const auto grad = phi.grad(algoim::uvector<double, 2>(x, y));
         for (std::size_t d = 0; d < gdim; ++d)
           qr_n[cell_no].push_back(grad(d));
       }
 
       // Bulk
-      const auto q_bulk = Algoim::quadGen<2>(
-          phi, Algoim::BoundingBox<double, 2>(a, b), dim_bulk, side, degree);
+      const auto q_bulk = algoim::quadGen<2>(
+          phi, algoim::HyperRectangle<double, 2>(min, max), dim_bulk, side, degree);
       convert(q_bulk, gdim, qr_pts[cell_no], qr_w[cell_no]);
       xyz[cell_no] = qr_pts[cell_no];
 
@@ -170,7 +171,7 @@ void run(const std::vector<double>& LLx, const std::vector<double>& LLy,
     else
     {
       // Either outside or inside
-      const blitz::TinyVector<double, 2> midp = 0.5 * (a + b);
+      const algoim::uvector<double, 2> midp = 0.5 * (min + max);
       if (phi(midp) < 0)
         uncut_cells.push_back(cell_no);
       else

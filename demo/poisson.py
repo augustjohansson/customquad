@@ -1,9 +1,9 @@
-"""
-This demo requires algoim, a header-only c++ library found at
+"""This demo requires algoim, a header-only C++ library found at
 
 https://github.com/algoim/algoim/
 
-and the c++ to python library cppyy (installable by pip).
+and the c++ to python library cppyy (installable by pip). The location
+of algoim can be set in algoim_utils.py.
 
 """
 
