@@ -23,6 +23,18 @@ def fcn4(x):
     return exp(x[0] * x[1])
 
 
+def scalar_norm(x):
+    return abs(x)
+
+
+def vector_norm(x):
+    return np.linalg.norm(x)
+
+
+def matrix_norm(x):
+    return x.norm()
+
+
 def assemble_scalar_test(mesh, fiat_element, polynomial_order, quadrature_degree, fcn):
     # Setup integrand
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
@@ -88,10 +100,12 @@ def assemble_matrix_test(mesh, fiat_element, polynomial_order, quadrature_degree
     qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
     qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
     qr_n = qr_pts  # dummy
-    b = libcutfemx.custom_assemble_matrix(L, [(cells, qr_pts, qr_w, qr_n)])
+    A = libcutfemx.custom_assemble_matrix(L, [(cells, qr_pts, qr_w, qr_n)])
+    A.assemble()
 
     # Reference
     L_ref = integrand * ufl.dx
-    b_ref = dolfinx.fem.petsc.assemble_matrix(dolfinx.fem.form(L_ref))
+    A_ref = dolfinx.fem.petsc.assemble_matrix(dolfinx.fem.form(L_ref))
+    A_ref.assemble()
 
-    return b, b_ref
+    return A, A_ref
