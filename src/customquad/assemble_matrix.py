@@ -7,10 +7,8 @@ import numpy
 from .setup_types import ffi, PETSc, sink, get_matsetvalues_api
 from . import utils
 
-def assemble_matrix():
-    pass
 
-def custom_assemble_matrix(form, qr_data):
+def assemble_matrix(form, qr_data):
     # qr_data is a list of tuples containing (cells, qr_pts, qr_w,
     # qr_n) (both for volume and surface integrals). Here, each of
     # qr_pts, qr_w and qr_n should be list(numpy.array) with len(list)
@@ -61,20 +59,23 @@ def custom_assemble_matrix(form, qr_data):
         # Dofs
         dofs, num_loc_dofs = utils.get_dofs(V)
 
-        local_assemble_matrix(A.handle,
-                              kernel,
-                              (vertices, coords, gdim),
-                              (dofs, num_loc_dofs),
-                              (form_coeffs, form_consts),
-                              (qr_pts, qr_w, qr_n, cells),
-                              matsetvalueslocal,
-                              mode)
+        local_assemble_matrix(
+            A.handle,
+            kernel,
+            (vertices, coords, gdim),
+            (dofs, num_loc_dofs),
+            (form_coeffs, form_consts),
+            (qr_pts, qr_w, qr_n, cells),
+            matsetvalueslocal,
+            mode,
+        )
     return A
 
 
-@numba.njit#(fastmath=True)
-def local_assemble_matrix(A_handle, kernel, mesh, dofmap, form_data, qr, matsetvalueslocal, mode):
-
+@numba.njit  # (fastmath=True)
+def local_assemble_matrix(
+    A_handle, kernel, mesh, dofmap, form_data, qr, matsetvalueslocal, mode
+):
     # Unpack
     v, x, gdim = mesh
     dofs, num_loc_dofs = dofmap
@@ -91,19 +92,25 @@ def local_assemble_matrix(A_handle, kernel, mesh, dofmap, form_data, qr, matsetv
             cell_coords[j] = x[v[cell, j], 0:gdim]
 
         A_local[:] = 0.0
-        kernel(ffi.from_buffer(A_local),
-               ffi.from_buffer(coeffs[cell, :]),
-               ffi.from_buffer(constants),
-               ffi.from_buffer(cell_coords),
-               len(qr_w[cell]),
-               ffi.from_buffer(qr_pts[cell]),
-               ffi.from_buffer(qr_w[cell]),
-               ffi.from_buffer(qr_n[cell]))
+        kernel(
+            ffi.from_buffer(A_local),
+            ffi.from_buffer(coeffs[cell, :]),
+            ffi.from_buffer(constants),
+            ffi.from_buffer(cell_coords),
+            len(qr_w[cell]),
+            ffi.from_buffer(qr_pts[cell]),
+            ffi.from_buffer(qr_w[cell]),
+            ffi.from_buffer(qr_n[cell]),
+        )
         pos = dofs[cell, :]
 
-        matsetvalueslocal(A_handle,
-                          num_loc_dofs, ffi.from_buffer(pos),
-                          num_loc_dofs, ffi.from_buffer(pos),
-                          ffi.from_buffer(A_local),
-                          mode)
+        matsetvalueslocal(
+            A_handle,
+            num_loc_dofs,
+            ffi.from_buffer(pos),
+            num_loc_dofs,
+            ffi.from_buffer(pos),
+            ffi.from_buffer(A_local),
+            mode,
+        )
     sink(A_local, dofs)

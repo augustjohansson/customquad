@@ -7,10 +7,8 @@ import numpy
 from .setup_types import ffi, PETSc
 from . import utils
 
-def assemble_scalar():
-    pass
 
-def custom_assemble_scalar(form, qr_data):
+def assemble_scalar(form, qr_data):
     # qr_data is a list of tuples containing (cells, qr_pts, qr_w,
     # qr_n) (both for volume and surface integrals). Here, each of
     # qr_pts, qr_w and qr_n should be list(numpy.array) with len(list)
