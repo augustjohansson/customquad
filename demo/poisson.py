@@ -1,20 +1,225 @@
+"""
+This demo requires algoim, a header-only c++ library found at
+
+https://github.com/algoim/algoim/
+
+and the c++ to python library cppyy (installable by pip).
+
+"""
+
 import dolfinx
+import customquad
 import ufl
-from ufl import grad, inner
+from ufl import grad, inner, dot, jump, avg
 from mpi4py import MPI
 import numpy as np
 from numpy import sin, pi
-import FIAT
 from petsc4py import PETSc
-from customquad.utils import dump
-
-# # Clear cache
-# from shutil import rmtree
-
-# rmtree("/root/.cache/fenics", True)
+import argparse
+import algoim_utils
 
 
-def mumps_solve(A, b):
+# import os
+# os.environ['CC'] = "/usr/lib/ccache/c++" # visible in this process + all children
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-factor", type=int, default=1)
+parser.add_argument("-algoim", action="store_true")
+parser.add_argument("-reuse", action="store_true")
+parser.add_argument("-betaN", type=float, default=10.0)
+parser.add_argument("-betas", type=float, default=1.0)
+args = parser.parse_args()
+print("arguments:")
+for arg in vars(args):
+    print("\t", arg, getattr(args, arg))
+
+resetdata = not args.reuse
+filename = "qrdata.pickle"
+do_gotools = not args.algoim
+domain = "circle"
+# domain = "square"
+# domain = "sphere"
+
+# Domain
+if domain == "square":
+    xmin = np.array([-0.033, -0.023])
+    xmax = np.array([1.1, 1.1])
+    L2_exact = 0.25
+    volume_exact = 1.0
+    area_exact = 4.0
+    gdim = 2
+
+elif domain == "circle":
+    xmin = np.array([-1.11, -1.51])
+    xmax = np.array([1.55, 1.22])
+    L2_exact = 0.93705920078336
+    volume_exact = pi
+    area_exact = 2 * pi
+    gdim = 2
+
+elif domain == "sphere":
+    assert args.algoim
+    xmin = np.array([-1.11, -1.21, -1.23])
+    xmax = np.array([1.23, 1.22, 1.11])
+    L2_exact = 0.418879020470132  # 0.517767045525837
+    volume_exact = 4 * pi / 3
+    area_exact = 4 * pi
+    gdim = 3
+
+else:
+    RuntimeError("Unknown domain", domain)
+
+# Mesh
+NN = np.array([args.factor] * gdim, dtype=np.int32)
+if gdim == 2:
+    cell_type = dolfinx.mesh.CellType.quadrilateral
+    mesh_generator = dolfinx.mesh.create_rectangle
+else:
+    cell_type = dolfinx.mesh.CellType.hexahedron
+    mesh_generator = dolfinx.mesh.create_box
+print(f"{NN=}")
+print(f"{xmin=}")
+print(f"{xmax=}")
+mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
+n = ufl.FacetNormal(mesh)
+h = ufl.CellDiameter(mesh)
+assert mesh.geometry.dim == gdim
+
+# FEM
+V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
+u = ufl.TrialFunction(V)
+v = ufl.TestFunction(V)
+f = dolfinx.fem.Function(V)
+g = dolfinx.fem.Function(V)
+
+
+def exact_solution2(x, y):
+    return sin(pi * x) * sin(pi * y)
+
+
+def exact_solution(x):
+    return sin(pi * x[0]) * sin(pi * x[1])
+
+
+if gdim == 3:
+    # def exact_solution2(x, y, z):
+    #     return sin(pi*x)*sin(pi*y)*sin(pi*z)
+    # def exact_solution(x):
+    #     return sin(pi*x[0])*sin(pi*x[1])*sin(pi*x[2])
+    def exact_solution2(x, y, z):
+        r = sqrt(x * x + y * y + z * z)
+        return 1.0 - r
+
+    def exact_solution(x):
+        r = np.sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2])
+        return 1.0 - r
+
+
+g.interpolate(exact_solution)
+
+
+def rhs(x):
+    # return gdim*pi*pi*exact_solution(x)
+    return -2 / exact_solution(x)
+
+
+f.interpolate(rhs)
+
+# PDE
+betaN = args.betaN
+betas = args.betas
+a_bulk = inner(grad(u), grad(v))
+L_bulk = inner(f, v)
+a_bdry = (
+    -inner(dot(n, grad(u)), v) - inner(u, dot(n, grad(v))) + inner(betaN / h * u, v)
+)
+L_bdry = -inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
+a_stab = betas * avg(h) * inner(jump(n, grad(u)), jump(n, grad(v)))
+
+# Generate (or load) qr
+degree = 4
+print("Generate qr")
+[
+    cut_cells,
+    uncut_cells,
+    outside_cells,
+    qr_pts,
+    qr_w,
+    qr_pts_bdry,
+    qr_w_bdry,
+    qr_n,
+    xyz,
+    xyz_bdry,
+] = algoim_utils.generate_qr(mesh, NN, degree, filename, resetdata, domain)
+
+# Set up cell tags and face tags
+uncut_cell_tag = 1
+cut_cell_tag = 2
+outside_cell_tag = 3
+ghost_penalty_tag = 4
+celltags = libcutfemx.utils.get_celltags(
+    mesh,
+    cut_cells,
+    uncut_cells,
+    outside_cells,
+    uncut_cell_tag=uncut_cell_tag,
+    cut_cell_tag=cut_cell_tag,
+    outside_cell_tag=outside_cell_tag,
+)
+facetags = libcutfemx.utils.get_facetags(
+    mesh, cut_cells, outside_cells, ghost_penalty_tag=ghost_penalty_tag
+)
+with dolfinx.cpp.io.XDMFFile(
+    MPI.COMM_WORLD, "output/mesh" + str(args.factor) + ".xdmf", "w"
+) as file:
+    file.write_mesh(mesh)
+    file.write_meshtags(celltags)
+
+# Integration using custom assembler (i.e. integrals over cut cells,
+# both cut bulk part and bdry part)
+# dx_cut = ufl.dx(metadata={"quadrature_rule": "runtime"}, domain=mesh) # Write like this or as below
+dx_cut = ufl.Measure("dx", metadata={"quadrature_rule": "runtime"})
+ds_cut = ufl.Measure(
+    "dx", subdomain_data=celltags, metadata={"quadrature_rule": "runtime"}
+)
+ac = a_bulk * dx_cut + a_bdry * ds_cut(cut_cell_tag)
+Lc = L_bulk * dx_cut  # + L_bdry*ds_cut(cut_cell_tag)
+qr_bulk = (cut_cells, qr_pts, qr_w)
+qr_bdry = (cut_cells, qr_pts_bdry, qr_w_bdry, qr_n)
+Ac = libcutfemx.custom_assemble_matrix(ac, [qr_bulk, qr_bdry])
+Ac.assemble()
+bc = libcutfemx.custom_assemble_vector(Lc, [qr_bulk])  # , qr_bdry])
+
+# Integration using standard assembler (uncut cells, ghost penalty faces)
+# dx_uncut = ufl.Measure("dx", subdomain_data=celltags, domain=mesh) # Write like this or as below
+dx_uncut = ufl.dx(subdomain_data=celltags, domain=mesh)
+dS = ufl.Measure("dS", subdomain_data=facetags, domain=mesh)
+ax = a_bulk * dx_uncut(uncut_cell_tag) + a_stab * dS(ghost_penalty_tag)
+Lx = L_bulk * dx_uncut(uncut_cell_tag)
+Ax = dolfinx.fem.assemble.assemble_matrix(ax)
+Ax.assemble()
+bx = dolfinx.fem.assemble.assemble_vector(Lx)
+
+# Add up
+A = Ax + Ac
+b = bx + bc
+
+# Check inf
+libcutfemx.utils.dump("A.txt", A)
+libcutfemx.utils.dump("b.txt", b)
+if not np.isfinite(b.array).all():
+    RuntimeError()
+
+if not np.isfinite(A.norm()):
+    RuntimeError()
+
+inactive_dofs = libcutfemx.utils.get_inactive_dofs(V, cut_cells, uncut_cells)
+A = libcutfemx.utils.lock_inactive_dofs(inactive_dofs, A)
+if not np.isfinite(A.norm()).all():
+    RuntimeError()
+
+
+def ksp_solve(A, b):
     ksp = PETSc.KSP().create(MPI.COMM_WORLD)
     ksp.setOperators(A)
     ksp.setType("preonly")
@@ -27,7 +232,7 @@ def mumps_solve(A, b):
 
 
 def vec_to_function(vec, V, tag="fcn"):
-    uh = dolfinx.fem.Function(V)
+    uh = dolfinx.Function(V)
     uh.vector.setArray(vec.array)
     uh.name = tag
     return uh
@@ -43,83 +248,97 @@ def write(filename, mesh, u):
         xdmffile.write_function(u)
 
 
-cell_type = dolfinx.cpp.mesh.CellType.quadrilateral
-Nx = 10
-Ny = 10
-mesh = dolfinx.mesh.create_rectangle(
-    MPI.COMM_WORLD,
-    [np.array([0, 0]), np.array([1, 1])],
-    [Nx, Ny],
-    cell_type=cell_type,
+# Solve
+vec = ksp_solve(A, b)
+u = vec_to_function(vec, V, "u")
+write("output/poisson" + str(args.factor) + ".xdmf", mesh, u)
+if not np.isfinite(vec.array).all():
+    import ipdb
+
+    ipdb.set_trace()
+if not np.isfinite(u.vector.array).all():
+    import ipdb
+
+    ipdb.set_trace()
+
+
+def assemble(integrand):
+    mc = libcutfemx.custom_assemble_scalar(integrand * dx_cut, [qr_bulk])
+    # print(f"{mc=}")
+    m = dolfinx.fem.assemble_scalar(integrand * dx_uncut(uncut_cell_tag))
+    # print(f"{m=}")
+    return m + mc
+
+
+# L2 errors
+L2_integrand = inner(u, u)
+L2_val = assemble(L2_integrand)
+L2_err = abs(L2_val - L2_exact) / L2_exact
+
+# Check functional assembly
+volume_func = libcutfemx.custom_assemble_scalar(
+    1.0 * dx_cut, [qr_bulk]
+) + dolfinx.fem.assemble.assemble_scalar(1.0 * dx_uncut(uncut_cell_tag))
+area_func = libcutfemx.custom_assemble_scalar(1.0 * ds_cut(cut_cell_tag), [qr_bdry])
+ve = abs(volume_exact - volume_func) / volume_exact
+ae = abs(area_exact - area_func) / area_exact
+print("functional volume error", ve)
+print("functional area error", ae)
+
+# Geometry errors
+volume = libcutfemx.utils.volume(xmin, xmax, NN, uncut_cells, qr_w)
+area = libcutfemx.utils.area(xmin, xmax, NN, qr_w_bdry)
+volume_err = abs(volume_exact - volume) / volume_exact
+area_err = abs(area_exact - area) / area_exact
+print("qr volume error", volume_err)
+print("qr area error", area_err)
+
+# Evaluate solution in qr to see that there aren't any spikes
+bb_tree = dolfinx.cpp.geometry.BoundingBoxTree(mesh, gdim)
+pts = []
+for x in [xyz, xyz_bdry]:
+    xnp = np.array(x)
+    xcc = xnp[cut_cells]
+    # resize to [3,1] format for bbox utils (also for gdim=2)
+    for xi in xcc:
+        p = xi.copy()
+        n = p.size // gdim
+        p.resize(n, gdim)
+        r = np.zeros((n, 3))
+        r[:, 0:gdim] = p.copy()
+        for ri in r:
+            pts.append(ri)
+pts = np.array(pts)
+cells = []
+for p in pts:
+    cells = dolfinx.cpp.geometry.compute_collisions_point(bb_tree, p)
+    cell = dolfinx.cpp.geometry.select_colliding_cells(mesh, cells, p, 1)
+    # assert len(cell) > 0
+    # #assert len(cell) == 1
+    # if len(cell) != 1:
+    #     #import ipdb; ipdb.set_trace()
+    #     print("found", len(cell), "cells")
+    cells.append(cell)
+uvals = u.eval(pts, cells).flatten()
+print("u in range", uvals.min(), uvals.max())
+
+if gdim == 2:
+    # Save coordinates and solution for plotting
+    axis = "axis tight; grid on; xlabel x; ylabel y;"
+    filename = "output/uu" + str(args.factor) + ".txt"
+    uu = pts
+    uu[:, 2] = uvals
+    np.savetxt(filename, uu)
+    print(f"uu=load('{filename}'); plot3(uu(:,1),uu(:,2),uu(:,3),'.');{axis}")
+
+    # Save xy and error for plotting
+    diff = pts
+    diff[:, 2] = abs(exact_solution2(pts[:, 0], pts[:, 1]) - uvals)
+    filename = "output/diff" + str(args.factor) + ".txt"
+    np.savetxt(filename, diff)
+    print(f"diff=load('{filename}'); plot3(diff(:,1),diff(:,2),diff(:,3),'.');{axis}")
+
+# Print conv last
+print(
+    "conv", mesh.hmax(), L2_val, L2_err, volume, volume_err, area, area_err, args.factor
 )
-num_cells = mesh.topology.index_map(mesh.topology.dim).size_local
-cells = np.arange(num_cells)
-
-V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-f = dolfinx.fem.Function(V)
-
-
-def rhs(x):
-    return sin(pi * x[0]) * sin(pi * x[1])
-
-
-f.interpolate(rhs)
-
-a_eqn = inner(grad(u), grad(v))
-L_eqn = inner(f, v)
-
-# BC
-tdim = mesh.topology.dim
-mesh.topology.create_entities(tdim - 1)
-mesh.topology.create_connectivity(tdim - 1, tdim)
-exterior_facets = dolfinx.cpp.mesh.exterior_facet_indices(mesh.topology)
-dofs = dolfinx.fem.locate_dofs_topological(
-    V=V, entity_dim=tdim - 1, entities=exterior_facets
-)
-bc = dolfinx.fem.dirichletbc(PETSc.ScalarType(0.0), dofs, V=V)
-
-# # Runtime quadrature
-# metadata = {"quadrature_rule": "runtime"}
-# a = a_eqn * ufl.dx(metadata=metadata)
-# L = L_eqn * ufl.dx(metadata=metadata)
-
-# degree = 2
-# q = FIAT.create_quadrature(FIAT.reference_element.UFCQuadrilateral(), degree)
-# qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
-# qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
-# qr_n = qr_pts  # dummy
-# qr_data = [(cells, qr_pts, qr_w, qr_n)]
-
-# A = libcutfemx.custom_assemble_matrix(a, qr_data)
-# A.assemble()
-# b = libcutfemx.custom_assemble_vector(L, qr_data)
-# libcutfemx.utils.dump("/tmp/Acustom.txt", A, True)
-# print("custom A norm", A.norm())
-# print("custom b norm", np.linalg.norm(b.array))
-
-# vec = mumps_solve(A, b)
-# u = vec_to_function(vec, V, "u")
-# print("custom u", u.vector.array)
-# write("poisson.xdmf", mesh, u)
-
-
-# Reference
-a = dolfinx.fem.form(a_eqn * ufl.dx)
-L = dolfinx.fem.form(L_eqn * ufl.dx)
-
-A = dolfinx.fem.petsc.assemble_matrix(a, bcs=[bc])
-A.assemble()
-b = dolfinx.fem.petsc.assemble_vector(L)
-dolfinx.fem.petsc.apply_lifting(b, [a], bcs=[[bc]])
-b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
-dolfinx.fem.set_bc(b, [bc])
-dump("/tmp/Aref.txt", A, True)
-print("ref A norm", A.norm())
-print("ref b norm", np.linalg.norm(b.array))
-
-vec = mumps_solve(A, b)
-u = vec_to_function(vec, V, "uref")
-print("ref u", u.vector.array)
-write("poisson_ref.xdmf", mesh, u)
