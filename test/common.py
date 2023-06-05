@@ -44,7 +44,7 @@ def assemble_scalar_test(mesh, fiat_element, polynomial_order, quadrature_degree
     integrand = inner(f, f)
 
     # Runtime quadrature
-    L = integrand * ufl.dx(metadata={"quadrature_rule": "runtime"})
+    L = dolfinx.fem.form(integrand * ufl.dx(metadata={"quadrature_rule": "runtime"}))
     num_cells = mesh.topology.index_map(mesh.topology.dim).size_local
     cells = np.arange(num_cells)
     q = FIAT.create_quadrature(fiat_element, quadrature_degree)
@@ -54,8 +54,8 @@ def assemble_scalar_test(mesh, fiat_element, polynomial_order, quadrature_degree
     b = libcutfemx.custom_assemble_scalar(L, [(cells, qr_pts, qr_w, qr_n)])
 
     # Reference
-    L_ref = integrand * ufl.dx
-    b_ref = dolfinx.fem.assemble_scalar(dolfinx.fem.form(L_ref))
+    L_ref = dolfinx.fem.form(integrand * ufl.dx)
+    b_ref = dolfinx.fem.assemble_scalar(L_ref)
 
     return b, b_ref
 
@@ -69,7 +69,7 @@ def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree
     integrand = inner(f, v)
 
     # Runtime quadrature
-    L = integrand * ufl.dx(metadata={"quadrature_rule": "runtime"})
+    L = dolfinx.fem.form(integrand * ufl.dx(metadata={"quadrature_rule": "runtime"}))
     num_cells = mesh.topology.index_map(mesh.topology.dim).size_local
     cells = np.arange(num_cells)
     q = FIAT.create_quadrature(fiat_element, quadrature_degree)
@@ -79,8 +79,8 @@ def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree
     b = libcutfemx.custom_assemble_vector(L, [(cells, qr_pts, qr_w, qr_n)])
 
     # Reference
-    L_ref = integrand * ufl.dx
-    b_ref = dolfinx.fem.petsc.assemble_vector(dolfinx.fem.form(L_ref))
+    L_ref = dolfinx.fem.form(integrand * ufl.dx)
+    b_ref = dolfinx.fem.petsc.assemble_vector(L_ref)
 
     return b, b_ref
 
@@ -93,7 +93,7 @@ def assemble_matrix_test(mesh, fiat_element, polynomial_order, quadrature_degree
     integrand = inner(u, v)
 
     # Runtime quadrature
-    L = integrand * ufl.dx(metadata={"quadrature_rule": "runtime"})
+    L = dolfinx.fem.form(integrand * ufl.dx(metadata={"quadrature_rule": "runtime"}))
     num_cells = mesh.topology.index_map(mesh.topology.dim).size_local
     cells = np.arange(num_cells)
     q = FIAT.create_quadrature(fiat_element, quadrature_degree)
@@ -104,8 +104,8 @@ def assemble_matrix_test(mesh, fiat_element, polynomial_order, quadrature_degree
     A.assemble()
 
     # Reference
-    L_ref = integrand * ufl.dx
-    A_ref = dolfinx.fem.petsc.assemble_matrix(dolfinx.fem.form(L_ref))
+    L_ref = dolfinx.fem.form(integrand * ufl.dx)
+    A_ref = dolfinx.fem.petsc.assemble_matrix(L_ref)
     A_ref.assemble()
 
     return A, A_ref
