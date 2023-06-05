@@ -1,5 +1,4 @@
 import dolfinx
-import libcutfemx
 import ufl
 from ufl import grad, inner
 from mpi4py import MPI
@@ -7,6 +6,7 @@ import numpy as np
 from numpy import sin, pi
 import FIAT
 from petsc4py import PETSc
+from customquad.utils import dump
 
 # # Clear cache
 # from shutil import rmtree
@@ -115,7 +115,7 @@ b = dolfinx.fem.petsc.assemble_vector(L)
 dolfinx.fem.petsc.apply_lifting(b, [a], bcs=[[bc]])
 b.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
 dolfinx.fem.set_bc(b, [bc])
-libcutfemx.utils.dump("/tmp/Aref.txt", A, True)
+dump("/tmp/Aref.txt", A, True)
 print("ref A norm", A.norm())
 print("ref b norm", np.linalg.norm(b.array))
 
