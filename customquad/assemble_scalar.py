@@ -6,7 +6,7 @@ from .setup_types import ffi, PETSc
 from . import utils
 
 
-def custom_assemble_scalar(form, qr_data):
+def assemble_scalar(form, qr_data):
     vertices, coords, _ = utils.get_vertices(form.mesh)
     integral_ids = form.integral_ids(dolfinx.cpp.fem.IntegralType.cell)
     all_coeffs = dolfinx.cpp.fem.pack_coefficients(form)
