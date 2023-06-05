@@ -3,8 +3,8 @@ import ufl
 from ufl import inner
 import numpy as np
 import FIAT
-import libcutfemx
 from numpy import sin, pi, exp
+import customquad
 
 
 def fcn1(x):
@@ -51,7 +51,7 @@ def assemble_scalar_test(mesh, fiat_element, polynomial_order, quadrature_degree
     qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
     qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
     qr_n = qr_pts  # dummy
-    b = libcutfemx.custom_assemble_scalar(L, [(cells, qr_pts, qr_w, qr_n)])
+    b = customquad.assemble_scalar(L, [(cells, qr_pts, qr_w, qr_n)])
 
     # Reference
     L_ref = dolfinx.fem.form(integrand * ufl.dx)
@@ -76,7 +76,7 @@ def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree
     qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
     qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
     qr_n = qr_pts  # dummy
-    b = libcutfemx.custom_assemble_vector(L, [(cells, qr_pts, qr_w, qr_n)])
+    b = customquad.assemble_vector(L, [(cells, qr_pts, qr_w, qr_n)])
 
     # Reference
     L_ref = dolfinx.fem.form(integrand * ufl.dx)
@@ -100,7 +100,7 @@ def assemble_matrix_test(mesh, fiat_element, polynomial_order, quadrature_degree
     qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
     qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
     qr_n = qr_pts  # dummy
-    A = libcutfemx.custom_assemble_matrix(L, [(cells, qr_pts, qr_w, qr_n)])
+    A = customquad.assemble_matrix(L, [(cells, qr_pts, qr_w, qr_n)])
     A.assemble()
 
     # Reference

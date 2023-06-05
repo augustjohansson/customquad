@@ -1,9 +1,7 @@
 import dolfinx
 import dolfinx.log
-
 import numba
-import numpy
-
+import numpy as np
 from .setup_types import ffi, PETSc
 from . import utils
 
@@ -17,93 +15,94 @@ def assemble_vector(form, qr_data):
     # FIXME: need to match qr_data list with correct integral_ids. A
     # custom integral have integral_ids == -1.
 
-    # Form
-    cpp_form = dolfinx.Form(form)._cpp_object
-    integral_ids = cpp_form.integrals.integral_ids(dolfinx.fem.IntegralType.custom)
-    assert len(integral_ids) == len(qr_data)
+    # See also https://gist.github.com/IgorBaratta/d0b84fd5d77f2628204097a1c0b180fb
 
-    # Function space
-    V = form.arguments()[0].ufl_function_space()
-
-    # Dofs
+    V = form.function_spaces[0]
     dofs, num_loc_dofs = utils.get_dofs(V)
-
-    # Vertices
     vertices, coords, gdim = utils.get_vertices(V.mesh)
 
-    # Form data
-    form_coeffs = dolfinx.cpp.fem.pack_coefficients(cpp_form)
-    form_consts = dolfinx.cpp.fem.pack_constants(cpp_form)
+    integral_ids = form.integral_ids(dolfinx.cpp.fem.IntegralType.cell)
+    all_coeffs = dolfinx.cpp.fem.pack_coefficients(form)
+    consts = dolfinx.cpp.fem.pack_constants(form)
 
-    # Assembly
-    ufc_form = dolfinx.jit.ffcx_jit(form)
-    b = dolfinx.cpp.la.create_vector(V.dofmap.index_map)
+    b = dolfinx.cpp.la.petsc.create_vector(V.dofmap.index_map, V.dofmap.index_map_bs)
 
-    with b.localForm() as b_local:
-        b_local.set(0.0)
-        qr_n = []
+    for i, id in enumerate(integral_ids):
+        kernel = getattr(
+            form.ufcx_form.integrals(dolfinx.cpp.fem.IntegralType.cell)[i],
+            "tabulate_tensor_runtime_float64",
+        )
 
-        for k, integral_id in enumerate(integral_ids):
-            # Get kernel
-            kernel = ufc_form.create_custom_integral(integral_id).tabulate_tensor
+        coeffs = all_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)]
 
-            # Get qr data for this kernel
-            qd = qr_data[k]
-            cells = qd[0]
-            qr_pts = qd[1]
-            qr_w = qd[2]
-            if len(qd) == 4:
-                qr_n = qd[3]
-            qr_pts, qr_w, qr_n, cells = utils.check_qr(qr_pts, qr_w, qr_n, cells)
+        assemble_cells(
+            b,
+            kernel,
+            vertices,
+            coords,
+            dofs,
+            num_loc_dofs,
+            coeffs,
+            consts,
+            qr_data[i],
+        )
 
-            local_assemble_vector(numpy.asarray(b_local),
-                                  kernel,
-                                  (vertices, coords, gdim),
-                                  (dofs, num_loc_dofs),
-                                  (form_coeffs, form_consts),
-                                  (qr_pts, qr_w, qr_n, cells))
-            b_local.ghostUpdate(addv=PETSc.InsertMode.ADD, mode=PETSc.ScatterMode.REVERSE)
     return b
 
 
-
-@numba.njit#(fastmath=True)
-def local_assemble_vector(b, kernel, mesh, dofmap, form_data, qr):
-
-    # Unpack
-    v, x, gdim = mesh
-    dofs, num_loc_dofs = dofmap
-    coeffs, constants = form_data
-    qr_pts, qr_w, qr_n, cells = qr
+@numba.njit  # (fastmath=True)
+def assemble_cells(b, kernel, vertices, coords, dofs, num_loc_dofs, coeffs, consts, qr):
+    # Unpack qr
+    cells, qr_pts, qr_w, qr_n = qr
 
     # Initialize
-    num_loc_vertices = v.shape[1]
-    cell_coords = numpy.zeros((num_loc_vertices, gdim))
-    b_local = numpy.zeros(num_loc_dofs, dtype=PETSc.ScalarType)
+    num_loc_vertices = vertices.shape[1]
+    cell_coords = np.zeros((num_loc_vertices, 3))
+    b_local = np.zeros(num_loc_dofs, dtype=PETSc.ScalarType)
+    entity_local_index = np.array([0], dtype=np.intc)
+
+    # Don't permute
+    perm = np.array([0], dtype=np.uint8)
 
     for cell in cells:
-        for j in range(num_loc_vertices):
-            cell_coords[j] = x[v[cell, j], 0:gdim]
-        # print("in the assembler:")
-        # print(cell_coords)
-        # print(qr_pts[cell])
-        # print(qr_w[cell])
-        # print(qr_n[cell])
-        # utils.print_for_header(b_local,coeffs[cell],constants,cell_coords,len(qr_w[cell]),qr_pts[cell],qr_w[cell],qr_n[cell])
-        # import ipdb; ipdb.set_trace()
+        cell_coords[:, :] = coords[vertices[cell, :]]
+
+        # print("cell_coords", cell_coords)
+        # print("qr_pts", qr_pts[cell])
+        # print("qr_w", qr_w[cell])
+        # print("qr_n (possibly not used)", qr_n[cell])
+        num_quadrature_points = len(qr_w[cell])
+
+        # utils.print_for_header(
+        #     b_local,
+        #     coeffs,
+        #     consts,
+        #     cell_coords,
+        #     entity_local_index,
+        #     perm,
+        #     num_quadrature_points,
+        #     qr_pts[cell],
+        #     qr_w[cell],
+        #     qr_n[cell],
+        # )
 
         b_local.fill(0.0)
-        kernel(ffi.from_buffer(b_local),
-               ffi.from_buffer(coeffs[cell]),
-               ffi.from_buffer(constants),
-               ffi.from_buffer(cell_coords),
-               len(qr_w[cell]),
-               ffi.from_buffer(qr_pts[cell]),
-               ffi.from_buffer(qr_w[cell]),
-               ffi.from_buffer(qr_n[cell]))
 
-        # print("after assemble", b_local)
-        # import ipdb; ipdb.set_trace()
+        kernel(
+            ffi.from_buffer(b_local),
+            ffi.from_buffer(coeffs[cell]),
+            ffi.from_buffer(consts),
+            ffi.from_buffer(cell_coords),
+            ffi.from_buffer(entity_local_index),
+            ffi.from_buffer(perm),
+            num_quadrature_points,
+            ffi.from_buffer(qr_pts[cell]),
+            ffi.from_buffer(qr_w[cell]),
+            ffi.from_buffer(qr_n[cell]),
+        )
 
+        # print("after assem: cell", cell, "b_local", b_local)
+
+        # FIXME: Change to petsc set_values_local from setup_types
         for j in range(num_loc_dofs):
             b[dofs[cell, j]] += b_local[j]
