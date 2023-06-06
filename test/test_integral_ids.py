@@ -6,7 +6,7 @@ import numpy as np
 import customquad as cq
 
 
-def test_volume():
+def get_mesh():
     # Mesh
     N = 10
     h = 1.0 / N
@@ -45,7 +45,6 @@ def test_volume():
     uncut_cell_tag = 1
     cut_cell_tag = 2
     outside_cell_tag = 3
-    ghost_penalty_tag = 4
 
     celltags = cq.utils.get_celltags(
         mesh,
@@ -56,6 +55,34 @@ def test_volume():
         cut_cell_tag=cut_cell_tag,
         outside_cell_tag=outside_cell_tag,
     )
+
+    return (
+        mesh,
+        h,
+        uncut_cells,
+        cut_cells,
+        outside_cells,
+        celltags,
+        uncut_cell_tag,
+        cut_cell_tag,
+        outside_cell_tag,
+    )
+
+
+def test_volume():
+    (
+        mesh,
+        h,
+        uncut_cells,
+        cut_cells,
+        outside_cells,
+        celltags,
+        uncut_cell_tag,
+        cut_cell_tag,
+        outside_cell_tag,
+    ) = get_mesh()
+
+    dim = mesh.topology.dim
 
     # Compute volume in two parts: first integrate over the uncut
     # cells in the interior using standard dolfinx functions. We need
@@ -95,3 +122,15 @@ def test_volume():
         dolfinx.fem.form(1.0 * dx_outside(domain=mesh)), qr_outside
     )
     assert abs(vol_bulk + vol_cut + vol_outside - 1.0) < 1e-10
+
+
+def test_area():
+    pass
+
+
+def test_normals():
+    pass
+
+
+def test_many_integral_ids():
+    pass
