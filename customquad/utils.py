@@ -18,12 +18,12 @@ def get_num_entities(mesh, tdim):
 
 def get_num_cells(mesh):
     tdim = mesh.topology.dim
-    return mesh.topology.index_map(tdim).size_local
+    return get_num_entities(mesh, tdim)
 
 
 def get_num_faces(mesh):
     tdim = mesh.topology.dim
-    return mesh.topology.index_map(tdim - 1).size_local
+    return get_num_entities(mesh, tdim)
 
 
 def get_dofs(V):
@@ -223,7 +223,7 @@ def get_celltags(
     values[outside_cells] = outside_cell_tag
     values[uncut_cells] = uncut_cell_tag
     values[cut_cells] = cut_cell_tag
-    mt = dolfinx.mesh.MeshTags(mesh, tdim, cells, values)
+    mt = dolfinx.mesh.meshtags(mesh, tdim, cells, values)
 
     return mt
 
@@ -254,7 +254,7 @@ def get_facetags(mesh, cut_cells, outside_cells, ghost_penalty_tag=1):
     # Setup face tags using values
     values = np.full(faces.shape, init_tag, dtype=np.intc)
     values[gp_faces] = ghost_penalty_tag
-    mt = dolfinx.mesh.MeshTags(mesh, tdim - 1, faces, values)
+    mt = dolfinx.mesh.meshtags(mesh, tdim - 1, faces, values)
 
     return mt
 
