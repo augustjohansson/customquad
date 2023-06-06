@@ -48,7 +48,7 @@ def assemble_cells(m, kernel, vertices, coords, coeffs, consts, qr):
     # Don't permute
     perm = np.array([0], dtype=np.uint8)
 
-    for cell in cells:
+    for k, cell in enumerate(cells):
         cell_coords[:, :] = coords[vertices[cell, :]]
 
         num_quadrature_points = len(qr_w[cell])
@@ -63,9 +63,9 @@ def assemble_cells(m, kernel, vertices, coords, coeffs, consts, qr):
             ffi.from_buffer(entity_local_index),
             ffi.from_buffer(perm),
             num_quadrature_points,
-            ffi.from_buffer(qr_pts[cell]),
-            ffi.from_buffer(qr_w[cell]),
-            ffi.from_buffer(qr_n[cell]),
+            ffi.from_buffer(qr_pts[k]),
+            ffi.from_buffer(qr_w[k]),
+            ffi.from_buffer(qr_n[k]),
         )
 
         m[0] += m_local[0]
