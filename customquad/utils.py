@@ -138,15 +138,12 @@ def get_inactive_dofs(V, cut_cells, uncut_cells):
     # for i in range(num_vertices):
     #     if hist[i] == 0:
     #         print(x[i][0],x[i][1])
-    # import ipdb; ipdb.set_trace()
 
     return inactive_dofs
 
 
 def lock_inactive_dofs(inactive_dofs, A):
     # dump("before.txt", A)
-
-    # import ipdb; ipdb.set_trace()
 
     A.setOption(PETSc.Mat.Option.NEW_NONZERO_ALLOCATION_ERR, False)
     A.zeroRows(inactive_dofs, 1)
@@ -162,11 +159,8 @@ def lock_inactive_dofs(inactive_dofs, A):
         for i in zeros[0]:
             A.setValue(i, i, 1.0)
         A.assemble()
-        import ipdb
+        breakpoint()
 
-        ipdb.set_trace()
-
-    # import ipdb; ipdb.set_trace()
     # zeroRows(self, rows, diag=1, Vec x=None, Vec b=None)
     return A
 

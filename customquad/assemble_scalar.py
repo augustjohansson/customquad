@@ -1,5 +1,4 @@
 import dolfinx
-import dolfinx.log
 import numba
 import numpy as np
 from .setup_types import ffi, PETSc

@@ -1,5 +1,4 @@
 import dolfinx
-import dolfinx.log
 import numba
 import numpy as np
 from .setup_types import ffi, PETSc, sink, get_matsetvalues_api
@@ -9,6 +8,8 @@ from . import utils
 
 
 def assemble_matrix(form, qr_data):
+    breakpoint()
+
     V = form.function_spaces[0]
     dofs, num_loc_dofs = utils.get_dofs(V)
     vertices, coords, gdim = utils.get_vertices(V.mesh)
