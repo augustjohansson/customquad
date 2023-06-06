@@ -157,7 +157,7 @@ uncut_cell_tag = 1
 cut_cell_tag = 2
 outside_cell_tag = 3
 ghost_penalty_tag = 4
-celltags = libcutfemx.utils.get_celltags(
+celltags = customquad.utils.get_celltags(
     mesh,
     cut_cells,
     uncut_cells,
@@ -166,11 +166,12 @@ celltags = libcutfemx.utils.get_celltags(
     cut_cell_tag=cut_cell_tag,
     outside_cell_tag=outside_cell_tag,
 )
-facetags = libcutfemx.utils.get_facetags(
+facetags = customquad.utils.get_facetags(
     mesh, cut_cells, outside_cells, ghost_penalty_tag=ghost_penalty_tag
 )
+breakpoint()
 with dolfinx.cpp.io.XDMFFile(
-    MPI.COMM_WORLD, "output/mesh" + str(args.factor) + ".xdmf", "w"
+    mesh.comm, "output/mesh" + str(args.factor) + ".xdmf", "w"
 ) as file:
     file.write_mesh(mesh)
     file.write_meshtags(celltags)
@@ -186,9 +187,9 @@ ac = a_bulk * dx_cut + a_bdry * ds_cut(cut_cell_tag)
 Lc = L_bulk * dx_cut  # + L_bdry*ds_cut(cut_cell_tag)
 qr_bulk = (cut_cells, qr_pts, qr_w)
 qr_bdry = (cut_cells, qr_pts_bdry, qr_w_bdry, qr_n)
-Ac = libcutfemx.custom_assemble_matrix(ac, [qr_bulk, qr_bdry])
+Ac = customquad.assemble_matrix(ac, [qr_bulk, qr_bdry])
 Ac.assemble()
-bc = libcutfemx.custom_assemble_vector(Lc, [qr_bulk])  # , qr_bdry])
+bc = customquad.assemble_vector(Lc, [qr_bulk])  # , qr_bdry])
 
 # Integration using standard assembler (uncut cells, ghost penalty faces)
 # dx_uncut = ufl.Measure("dx", subdomain_data=celltags, domain=mesh) # Write like this or as below
@@ -205,22 +206,22 @@ A = Ax + Ac
 b = bx + bc
 
 # Check inf
-libcutfemx.utils.dump("A.txt", A)
-libcutfemx.utils.dump("b.txt", b)
+customquad.utils.dump("A.txt", A)
+customquad.utils.dump("b.txt", b)
 if not np.isfinite(b.array).all():
     RuntimeError()
 
 if not np.isfinite(A.norm()):
     RuntimeError()
 
-inactive_dofs = libcutfemx.utils.get_inactive_dofs(V, cut_cells, uncut_cells)
-A = libcutfemx.utils.lock_inactive_dofs(inactive_dofs, A)
+inactive_dofs = customquad.utils.get_inactive_dofs(V, cut_cells, uncut_cells)
+A = customquad.utils.lock_inactive_dofs(inactive_dofs, A)
 if not np.isfinite(A.norm()).all():
     RuntimeError()
 
 
 def ksp_solve(A, b):
-    ksp = PETSc.KSP().create(MPI.COMM_WORLD)
+    ksp = PETSc.KSP().create(mesh.comm)
     ksp.setOperators(A)
     ksp.setType("preonly")
     ksp.getPC().setType("lu")
@@ -242,7 +243,7 @@ def write(filename, mesh, u):
     from dolfinx.io import XDMFFile
 
     with XDMFFile(
-        MPI.COMM_WORLD, filename, "w", encoding=XDMFFile.Encoding.HDF5
+        mesh.comm, filename, "w", encoding=XDMFFile.Encoding.HDF5
     ) as xdmffile:
         xdmffile.write_mesh(mesh)
         xdmffile.write_function(u)
@@ -253,17 +254,13 @@ vec = ksp_solve(A, b)
 u = vec_to_function(vec, V, "u")
 write("output/poisson" + str(args.factor) + ".xdmf", mesh, u)
 if not np.isfinite(vec.array).all():
-    import ipdb
-
-    ipdb.set_trace()
+    RuntimeError("not finite")
 if not np.isfinite(u.vector.array).all():
-    import ipdb
-
-    ipdb.set_trace()
+    RuntimeError("not finite")
 
 
 def assemble(integrand):
-    mc = libcutfemx.custom_assemble_scalar(integrand * dx_cut, [qr_bulk])
+    mc = customquad.assemble_scalar(integrand * dx_cut, [qr_bulk])
     # print(f"{mc=}")
     m = dolfinx.fem.assemble_scalar(integrand * dx_uncut(uncut_cell_tag))
     # print(f"{m=}")
@@ -276,18 +273,18 @@ L2_val = assemble(L2_integrand)
 L2_err = abs(L2_val - L2_exact) / L2_exact
 
 # Check functional assembly
-volume_func = libcutfemx.custom_assemble_scalar(
+volume_func = customquad.assemble_scalar(
     1.0 * dx_cut, [qr_bulk]
 ) + dolfinx.fem.assemble.assemble_scalar(1.0 * dx_uncut(uncut_cell_tag))
-area_func = libcutfemx.custom_assemble_scalar(1.0 * ds_cut(cut_cell_tag), [qr_bdry])
+area_func = customquad.assemble_scalar(1.0 * ds_cut(cut_cell_tag), [qr_bdry])
 ve = abs(volume_exact - volume_func) / volume_exact
 ae = abs(area_exact - area_func) / area_exact
 print("functional volume error", ve)
 print("functional area error", ae)
 
 # Geometry errors
-volume = libcutfemx.utils.volume(xmin, xmax, NN, uncut_cells, qr_w)
-area = libcutfemx.utils.area(xmin, xmax, NN, qr_w_bdry)
+volume = customquad.utils.volume(xmin, xmax, NN, uncut_cells, qr_w)
+area = customquad.utils.area(xmin, xmax, NN, qr_w_bdry)
 volume_err = abs(volume_exact - volume) / volume_exact
 area_err = abs(area_exact - area) / area_exact
 print("qr volume error", volume_err)
@@ -316,7 +313,7 @@ for p in pts:
     # assert len(cell) > 0
     # #assert len(cell) == 1
     # if len(cell) != 1:
-    #     #import ipdb; ipdb.set_trace()
+    #     #breakpoint()
     #     print("found", len(cell), "cells")
     cells.append(cell)
 uvals = u.eval(pts, cells).flatten()
