@@ -4,6 +4,8 @@ RUN pip3 install --no-cache-dir git+https://github.com/FEniCS/fiat.git
 
 RUN pip3 install --no-cache-dir --force-reinstall --no-deps git+https://github.com/augustjohansson/ffcx-custom.git@august/2023cq
 
+RUN pip3 install --no-cache-dir --force-reinstall --no-deps git+https://github.com/augustjohansson/ufl-custom.git
+
 RUN pip3 install --no-cache-dir cppyy
 
 RUN git clone --depth=1 https://github.com/algoim/algoim.git && \

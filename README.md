@@ -15,6 +15,11 @@ The library depends to a large extent on a fork of ffcx
 
 - https://github.com/augustjohansson/ffcx-custom
 
+A small change is made to ufl to allow for normals in cell
+integrals. To this end, this fork of ufl is needed
+
+- https://github.com/augustjohansson/ufl-custom
+
 Some of the demos use the Algoim library for obtaining quadrature
 rules. It is found at
 
