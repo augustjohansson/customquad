@@ -208,7 +208,6 @@ def get_celltags(
     assert uncut_cell_tag != cut_cell_tag
     init_tag = min(min(outside_cell_tag, uncut_cell_tag), cut_cell_tag) - 1
     tdim = mesh.topology.dim
-    # cell_map = mesh.topology.index_map(tdim)
     num_cells = get_num_cells(mesh)
     cells = np.arange(0, num_cells)
 
