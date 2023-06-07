@@ -71,7 +71,3 @@ def test_hexes_assembly(assembler, norm, N, xmin, xmax, fcn):
 
     b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
-
-
-def test_normals():
-    pass

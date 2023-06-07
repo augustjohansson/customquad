@@ -179,9 +179,6 @@ def test_area():
     exterior_cells = [facet_to_cells.links(f)[0] for f in exterior_facets]
     assert num_ext_facets == len(exterior_cells)
 
-    # The measure for runtime quadrature
-    dx = ufl.Measure("dx", metadata={"quadrature_rule": "runtime"})
-
     # The points does not matter
     qr_pts = np.tile([0.5] * dim, [num_ext_facets, 1])
 
@@ -202,17 +199,91 @@ def test_area():
 
     qr_data = [(exterior_cells, qr_pts, qr_w)]
 
-    area = cq.assemble_scalar(dolfinx.fem.form(1.0 * dx(domain=mesh)), qr_data)
+    # Integral
+    dx = ufl.Measure("dx", metadata={"quadrature_rule": "runtime"})
+    form = dolfinx.fem.form(1.0 * dx(domain=mesh))
+    area = cq.assemble_scalar(form, qr_data)
 
     # Verify
-    exact_area = dolfinx.fem.assemble_scalar(
-        dolfinx.fem.form(1.0 * ufl.ds(domain=mesh))
-    )
+    form = dolfinx.fem.form(1.0 * ufl.ds(domain=mesh))
+    exact_area = dolfinx.fem.assemble_scalar(form)
     assert abs(area - exact_area) / exact_area < 1e-10
 
 
 def test_normals():
-    pass
+    (
+        mesh,
+        h,
+        celltags,
+        cut_cell_tag,
+        uncut_cell_tag,
+        outside_cell_tag,
+    ) = get_mesh()
+
+    dim = mesh.topology.dim
+
+    # Find exterior facets
+    mesh.topology.create_connectivity(dim - 1, dim)
+    exterior_facets = dolfinx.mesh.exterior_facet_indices(mesh.topology)
+    num_ext_facets = len(exterior_facets)
+
+    # Find the cells of the exterior facets
+    facet_to_cells = mesh.topology.connectivity(dim - 1, dim)
+    exterior_cells = [facet_to_cells.links(f)[0] for f in exterior_facets]
+    assert num_ext_facets == len(exterior_cells)
+
+    # The points does not matter
+    qr_pts = np.tile([0.5] * dim, [num_ext_facets, 1])
+
+    # Scaled weights
+    cell_volume = tensor_product_volumes(mesh, exterior_cells, dim)
+    facet_area = tensor_product_volumes(mesh, exterior_facets, dim - 1)
+    qr_w = np.empty([num_ext_facets, 1])
+    for k in range(num_ext_facets):
+        qr_w[k] = 1.0 / cell_volume[k] * facet_area[k]
+
+    # Normals
+    qr_n = np.empty([num_ext_facets, dim])
+    ge = dolfinx.cpp.mesh.entities_to_geometry(mesh, dim - 1, exterior_facets, False)
+    y = mesh.geometry.x
+    globmin = np.min(y, axis=0)
+    globmax = np.max(y, axis=0)
+    x = y[ge]
+    xmin = np.min(x, axis=1)
+    xmax = np.max(x, axis=1)
+    tol = 1e-10
+    left = xmin[:, 0] < globmin[0] + tol
+    right = xmax[:, 0] > globmax[0] - tol
+    bottom = xmin[:, 1] < globmin[1] + tol
+    top = xmax[:, 1] > globmax[1] - tol
+    qr_n[left] = np.array([-1.0, 0.0])
+    qr_n[right] = np.array([1.0, 0.0])
+    qr_n[bottom] = np.array([0.0, -1.0])
+    qr_n[top] = np.array([0.0, 1.0])
+
+    qr_data = [(exterior_cells, qr_pts, qr_w, qr_n)]
+
+    # Integrals
+    dx = ufl.Measure("dx", metadata={"quadrature_rule": "runtime"})
+    n = ufl.FacetNormal(mesh)
+    x = ufl.SpatialCoordinate(mesh)
+
+    # form = dolfinx.fem.form(ufl.inner(ufl.as_vector([x[0], x[1]]), n) * dx(domain=mesh))
+    # integral = cq.assemble_scalar(form, qr_data)
+
+    # form = dolfinx.fem.form(ufl.inner(ufl.as_vector([x[0], ]), n) * dx(domain=mesh))
+    # integral = cq.assemble_scalar(form, qr_data)
+
+    # v = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+    # v = np.array([[x[0], 0.0], [0.0, x[1]], [x[0], x[1]]])
+    v = np.array([[x[0], 0.0]])  # , [0.0, x[1]], [x[0], x[1]]])
+    for v_i in v:
+        form = dolfinx.fem.form(ufl.inner(ufl.as_vector(v_i), n) * dx(domain=mesh))
+        integral = cq.assemble_scalar(form, qr_data)
+    #     breakpoint()
+
+    # breakpoint()
+    # pass
 
 
 def test_many_integral_ids():
