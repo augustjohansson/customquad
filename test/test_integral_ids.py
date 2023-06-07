@@ -105,6 +105,9 @@ def test_volume():
     )
     assert abs(vol_bulk - len(uncut_cells) * cell_vol) < 1e-10
 
+    # The measure for the integration with quadrature rules at runtime
+    dx = ufl.Measure("dx", metadata={"quadrature_rule": "runtime"})
+
     # Compute the volume over the cut cells by integration using
     # runtime assembly. First create a simple quadrature (the qr_pts
     # doesn't matter here). Fenics will internally do the mapping to
@@ -114,9 +117,10 @@ def test_volume():
     qr_cut = [(cut_cells, qr_pts, qr_w)]
 
     # We don't need subdomain data here: the integration domain is
-    # given by the cells in qr_cut.
-    dx_cut = ufl.Measure("dx", metadata={"quadrature_rule": "runtime"})
-    vol_cut = cq.assemble_scalar(dolfinx.fem.form(1.0 * dx_cut(domain=mesh)), qr_cut)
+    # given by the cells in qr_cut. We need the domain=mesh since
+    # there's no function space in the integrand.
+    form = dolfinx.fem.form(1.0 * dx(domain=mesh))
+    vol_cut = cq.assemble_scalar(form, qr_cut)
     assert abs(vol_cut - len(cut_cells) * cell_vol) / abs(vol_cut) < 1e-10
 
     # To check everything, compute the volume of the cells outside as
@@ -124,10 +128,8 @@ def test_volume():
     qr_pts = np.tile([0.5] * dim, [len(outside_cells), 1])
     qr_w = np.tile(1.0, [len(outside_cells), 1])
     qr_outside = [(outside_cells, qr_pts, qr_w)]
-    dx_outside = ufl.Measure("dx", metadata={"quadrature_rule": "runtime"})
-    vol_outside = cq.assemble_scalar(
-        dolfinx.fem.form(1.0 * dx_outside(domain=mesh)), qr_outside
-    )
+    form = dolfinx.fem.form(1.0 * dx(domain=mesh))
+    vol_outside = cq.assemble_scalar(form, qr_outside)
 
     # Verify
     total_vol = num_cells * cell_vol
@@ -177,6 +179,9 @@ def test_area():
     exterior_cells = [facet_to_cells.links(f)[0] for f in exterior_facets]
     assert num_ext_facets == len(exterior_cells)
 
+    # The measure for runtime quadrature
+    dx = ufl.Measure("dx", metadata={"quadrature_rule": "runtime"})
+
     # The points does not matter
     qr_pts = np.tile([0.5] * dim, [num_ext_facets, 1])
 
@@ -196,7 +201,7 @@ def test_area():
         qr_w[k] = 1.0 / cell_volume[k] * facet_area[k]
 
     qr_data = [(exterior_cells, qr_pts, qr_w)]
-    dx = ufl.Measure("dx", metadata={"quadrature_rule": "runtime"})
+
     area = cq.assemble_scalar(dolfinx.fem.form(1.0 * dx(domain=mesh)), qr_data)
 
     # Verify
