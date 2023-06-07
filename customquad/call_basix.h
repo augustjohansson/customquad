@@ -1,50 +1,6 @@
-// Cell types (cell.h)
-// enum class type
-// {
-//   point = 0,
-//   interval = 1,
-//   triangle = 2,
-//   tetrahedron = 3,
-//   quadrilateral = 4,
-//   hexahedron = 5,
-//   prism = 6,
-//   pyramid = 7
-// };
-// /// Available element families (element_families.h)
-// enum class family
-// {
-//   custom = 0,
-//   P = 1,
-//   RT = 2,
-//   N1E = 3,
-//   BDM = 4,
-//   N2E = 5,
-//   CR = 6,
-//   Regge = 7,
-//   DPC = 8,
-//   bubble = 9,
-//   serendipity = 10,
-//   HHJ = 11,
-//   Hermite = 12
-// };
-// /// Variants of a Lagrange space that can be created
-// enum class lagrange_variant
-// {
-//   unset = -1,
-//   equispaced = 0,
-//   gll_warped = 1,
-//   gll_isaac = 2,
-//   gll_centroid = 3,
-//   chebyshev_warped = 4,
-//   chebyshev_isaac = 5,
-//   chebyshev_centroid = 6,
-//   gl_warped = 7,
-//   gl_isaac = 8,
-//   gl_centroid = 9,
-//   legendre = 10,
-//   bernstein = 11,
-//   vtk = 20,
-// };
+// For all cell types, see basix cell.h
+// For all element families, see element_families.h
+// For all variants of Lagrange spaces, see element_families.h
 
 #include <basix/finite-element.h>
 #include <basix/mdspan.hpp>
@@ -104,46 +60,49 @@ void call_basix(double***** FE,
     for (int j = 0; j < num_basis_functions; ++j) 
       (*FE)[0][0][i][j] = tab(basix_derivative, i, j, 0);
 
-  // Debug output
-  std::ofstream f;
-  std::stringstream ss;
-  ss << "/tmp/call_basix" << reinterpret_cast<void*>(FE) << ".txt";
-  f.open(ss.str());
-  f << "basix_derivative=" << basix_derivative << " family " << family << " cell_type " << cell_type << " degree " << degree << " gdim " << gdim << "\n";
-  f << "tab table copied to FE[0][0][i][j]:\n";
-  for (int i = 0; i < num_quadrature_points; ++i)
-    for (int j = 0; j < num_basis_functions; ++j) 
-      f << i << ' ' << j << ' ' << (*FE)[0][0][i][j] << '\n';
-  f << "I.e. the i j matrix looks like\n";
-  for (int i = 0; i < num_quadrature_points; ++i) {
-    for (int j = 0; j < num_basis_functions; ++j) 
-      f << (*FE)[0][0][i][j] << ' ';
+  bool debug_output = false;
+  
+  if (debug_output) {
+    std::ofstream f;
+    std::stringstream ss;
+    ss << "/tmp/call_basix" << reinterpret_cast<void*>(FE) << ".txt";
+    f.open(ss.str());
+    f << "basix_derivative=" << basix_derivative << " family " << family << " cell_type " << cell_type << " degree " << degree << " gdim " << gdim << "\n";
+    f << "tab table copied to FE[0][0][i][j]:\n";
+    for (int i = 0; i < num_quadrature_points; ++i)
+      for (int j = 0; j < num_basis_functions; ++j) 
+	f << i << ' ' << j << ' ' << (*FE)[0][0][i][j] << '\n';
+    f << "I.e. the i j matrix looks like\n";
+    for (int i = 0; i < num_quadrature_points; ++i) {
+      for (int j = 0; j < num_basis_functions; ++j) 
+	f << (*FE)[0][0][i][j] << ' ';
+      f << '\n';
+    }
+    f << "quadrature points:\n";
+    for (int i = 0; i < num_quadrature_points; ++i)
+      for (int d = 0; d < gdim; ++d)
+	f << quadrature_points[gdim*i+d] << ' ';
     f << '\n';
-  }
-  f << "quadrature points:\n";
-  for (int i = 0; i < num_quadrature_points; ++i)
-    for (int d = 0; d < gdim; ++d)
-      f << quadrature_points[gdim*i+d] << ' ';
-  f << '\n';
-  f << "tab shape: ";
-  for (auto s: shape)
-    f << s <<' ';
-  f << '\n';
+    f << "tab shape: ";
+    for (auto s: shape)
+      f << s <<' ';
+    f << '\n';
 
-  f << "tab:\n";
-  for (std::size_t i = 0; i != tab.extent(0); ++i){
-    f << "i "<<i << '\n';
-    for (std::size_t j = 0; j != tab.extent(1); ++j){
-      for (std::size_t k = 0; k != tab.extent(2); ++k){
-	for (std::size_t l = 0; l != tab.extent(3); ++l)
-	  f << tab(i,j,k,l)<<' ';
-	f<< '\n';
+    f << "tab:\n";
+    for (std::size_t i = 0; i != tab.extent(0); ++i){
+      f << "i "<<i << '\n';
+      for (std::size_t j = 0; j != tab.extent(1); ++j){
+	for (std::size_t k = 0; k != tab.extent(2); ++k){
+	  for (std::size_t l = 0; l != tab.extent(3); ++l)
+	    f << tab(i,j,k,l)<<' ';
+	  f<< '\n';
+	}
+	f << '\n';
       }
       f << '\n';
     }
-    f << '\n';
+  
+    f.close();
   }
   
-  f.close();
-
 }
