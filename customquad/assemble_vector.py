@@ -52,7 +52,15 @@ def assemble_vector(form, qr_data):
 @numba.njit  # (fastmath=True)
 def assemble_cells(b, kernel, vertices, coords, dofs, num_loc_dofs, coeffs, consts, qr):
     # Unpack qr
-    cells, qr_pts, qr_w, qr_n = qr
+    if len(qr) == 3:
+        cells, qr_pts, qr_w = qr
+        qr_n = qr_pts  # dummy
+    else:
+        cells, qr_pts, qr_w, qr_n = qr
+        assert len(cells) == len(qr_n)
+
+    assert len(cells) == len(qr_pts)
+    assert len(cells) == len(qr_w)
 
     # Initialize
     num_loc_vertices = vertices.shape[1]

@@ -62,7 +62,15 @@ def assemble_cells(
     mode,
 ):
     # Unpack qr
-    cells, qr_pts, qr_w, qr_n = qr
+    if len(qr) == 3:
+        cells, qr_pts, qr_w = qr
+        qr_n = qr_pts  # dummy
+    else:
+        cells, qr_pts, qr_w, qr_n = qr
+        assert len(cells) == len(qr_n)
+
+    assert len(cells) == len(qr_pts)
+    assert len(cells) == len(qr_w)
 
     # Initialize
     num_loc_vertices = vertices.shape[1]
