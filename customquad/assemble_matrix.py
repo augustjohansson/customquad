@@ -84,8 +84,7 @@ def assemble_cells(
     for k, cell in enumerate(cells):
         pos = dofmap[cell, :]
         cell_coords[:, :] = coords[vertices[cell, :]]
-        num_quadrature_points = len(qr_w[cell])
-
+        num_quadrature_points = len(qr_w[k])
         A_local.fill(0.0)
 
         kernel(

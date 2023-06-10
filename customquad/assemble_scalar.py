@@ -47,6 +47,11 @@ def assemble_cells(m, kernel, vertices, coords, coeffs, consts, qr):
     assert len(cells) == len(qr_pts)
     assert len(cells) == len(qr_w)
 
+    # # This is needed if running w/o numba. With numba, if
+    # len(coeffs) == 0, the coeffs[cell] is still ok
+    # if len(coeffs) = 0:
+    #   coeffs = [] * len(cells)
+
     # Initialize
     num_loc_vertices = vertices.shape[1]
     cell_coords = np.zeros((num_loc_vertices, 3))
@@ -58,9 +63,7 @@ def assemble_cells(m, kernel, vertices, coords, coeffs, consts, qr):
 
     for k, cell in enumerate(cells):
         cell_coords[:, :] = coords[vertices[cell, :]]
-
-        num_quadrature_points = len(qr_w[cell])
-
+        num_quadrature_points = len(qr_w[k])
         m_local.fill(0.0)
 
         kernel(

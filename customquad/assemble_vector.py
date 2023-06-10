@@ -73,26 +73,7 @@ def assemble_cells(b, kernel, vertices, coords, dofs, num_loc_dofs, coeffs, cons
 
     for k, cell in enumerate(cells):
         cell_coords[:, :] = coords[vertices[cell, :]]
-
-        # print("cell_coords", cell_coords)
-        # print("qr_pts", qr_pts[cell])
-        # print("qr_w", qr_w[cell])
-        # print("qr_n (possibly not used)", qr_n[cell])
-        num_quadrature_points = len(qr_w[cell])
-
-        # utils.print_for_header(
-        #     b_local,
-        #     coeffs,
-        #     consts,
-        #     cell_coords,
-        #     entity_local_index,
-        #     perm,
-        #     num_quadrature_points,
-        #     qr_pts[cell],
-        #     qr_w[cell],
-        #     qr_n[cell],
-        # )
-
+        num_quadrature_points = len(qr_w[k])
         b_local.fill(0.0)
 
         kernel(
@@ -108,8 +89,6 @@ def assemble_cells(b, kernel, vertices, coords, dofs, num_loc_dofs, coeffs, cons
             ffi.from_buffer(qr_n[k]),
         )
 
-        # print("after assem: cell", cell, "b_local", b_local)
-
-        # FIXME: Change to petsc set_values_local from setup_types
+        # FIXME: Change to petsc set_values_local from setup_types?
         for j in range(num_loc_dofs):
             b[dofs[cell, j]] += b_local[j]
