@@ -35,7 +35,15 @@ void call_basix(double***** FE,
 
   // Compute basis and derivatives. The shape is (derivative, point,
   // basis fn index, value index).
-  auto [tab_data, shape] = lagrange.tabulate(nd, std::vector<double>(quadrature_points, quadrature_points+gdim*num_quadrature_points), {num_quadrature_points, gdim});
+  std::vector<double> qr_pts(quadrature_points, quadrature_points+gdim*num_quadrature_points);
+
+  if (cell_type == 4) {
+    // Mirror quadrature points for quadrilaterals cells
+    for (std::size_t i = 0; i < num_quadrature_points; i += 2) 
+      std::swap(qr_pts[i], qr_pts[i+1]);
+  }
+
+  auto [tab_data, shape] = lagrange.tabulate(nd, qr_pts, {num_quadrature_points, gdim});
 
   // Convenient format
   cmdspan4_t tab(tab_data.data(), shape);
