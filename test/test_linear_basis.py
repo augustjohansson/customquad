@@ -2,6 +2,8 @@ import pytest
 import dolfinx
 from mpi4py import MPI
 import numpy as np
+import customquad as cq
+import ufl
 import FIAT
 from common import (
     assemble_scalar_test,
@@ -71,3 +73,33 @@ def test_hexes_assembly(assembler, norm, N, xmin, xmax, fcn):
 
     b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
+
+
+@pytest.mark.parametrize(
+    ("qr_pts", "m_exact"),
+    [
+        (np.array([[0.0, 0.0]]), 0.0),
+        (np.array([[1.0, 0.0]]), 2.0),
+        (np.array([[0.0, 1.0]]), 1.0),
+        (np.array([[1.0, 1.0]]), 3.0),
+        (np.array([[0.5, 0.1]]), 1.1),
+    ],
+)
+def test_corners(qr_pts, m_exact):
+    N = 1
+    cell_type = dolfinx.mesh.CellType.quadrilateral
+    mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, N, N, cell_type)
+    num_cells = cq.utils.get_num_cells(mesh)
+    cells = np.arange(num_cells)
+
+    x = ufl.SpatialCoordinate(mesh)
+    integrand = 2 * x[0] + x[1]
+    form = dolfinx.fem.form(
+        integrand * ufl.dx(metadata={"quadrature_rule": "runtime"}, domain=mesh)
+    )
+
+    qr_w = np.array([[1.0]])
+    qr_data = [(cells, qr_pts, qr_w)]
+    m = cq.assemble_scalar(form, qr_data)
+
+    assert abs(m - m_exact) < 1e-10
