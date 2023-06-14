@@ -4,7 +4,8 @@ from ufl import inner
 import numpy as np
 import FIAT
 from numpy import sin, pi, exp
-import customquad
+import customquad as cq
+from mpi4py import MPI
 
 
 def fcn1(x):
@@ -38,7 +39,6 @@ def matrix_norm(x):
 def assemble_scalar_test(mesh, fiat_element, polynomial_order, quadrature_degree, fcn):
     # Setup integrand
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
-    v = ufl.TestFunction(V)
     f = dolfinx.fem.Function(V)
     f.interpolate(fcn)
     integrand = inner(f, f)
@@ -50,7 +50,7 @@ def assemble_scalar_test(mesh, fiat_element, polynomial_order, quadrature_degree
     q = FIAT.create_quadrature(fiat_element, quadrature_degree)
     qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
     qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
-    b = customquad.assemble_scalar(L, [(cells, qr_pts, qr_w)])
+    b = cq.assemble_scalar(L, [(cells, qr_pts, qr_w)])
 
     # Reference
     L_ref = dolfinx.fem.form(integrand * ufl.dx)
@@ -74,7 +74,7 @@ def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree
     q = FIAT.create_quadrature(fiat_element, quadrature_degree)
     qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
     qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
-    b = customquad.assemble_vector(L, [(cells, qr_pts, qr_w)])
+    b = cq.assemble_vector(L, [(cells, qr_pts, qr_w)])
 
     # Reference
     L_ref = dolfinx.fem.form(integrand * ufl.dx)
@@ -97,7 +97,7 @@ def assemble_matrix_test(mesh, fiat_element, polynomial_order, quadrature_degree
     q = FIAT.create_quadrature(fiat_element, quadrature_degree)
     qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
     qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
-    A = customquad.assemble_matrix(L, [(cells, qr_pts, qr_w)])
+    A = cq.assemble_matrix(L, [(cells, qr_pts, qr_w)])
     A.assemble()
 
     # Reference
