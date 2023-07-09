@@ -82,9 +82,12 @@ def create_int_array(vec):
 
 
 def create_list_of_arrays(v):
-    w = list()
+    # w = list()
+    # for i in range(len(v)):
+    #     w.append(create_double_array(v[i]))
+    w = [None] * len(v)
     for i in range(len(v)):
-        w.append(create_double_array(v[i]))
+        w[i] = create_double_array(v[i])
     return w
 
 
