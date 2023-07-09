@@ -217,13 +217,25 @@ void run(const std::vector<double>& LLx, const std::vector<double>& LLy,
     };
 
     std::cout << "bulk [0,1]^2\n";
+    std::cout <<"qr_pts=[";
     print(qr_pts);
+    std::cout << "];\n";
+
     std::cout << "bdry [0,1]^2\n";
+    std::cout << "qr_pts_bdry=[";
     print(qr_pts_bdry);
-    std::cout << "xyz\n";
+    std::cout << "];\n";
+    
+    std::cout << "xyz=[";
     print(xyz);
-    std::cout << "xyz bdry\n";
+    std::cout << "];\n";
+    std::cout << "xyz_bdry=[";
     print(xyz_bdry);
+    std::cout << "];\n";
+    std::cout << "qr_n=[";
+    print(qr_n);
+    std::cout << "];\n";
+    std::cout << "drawarrow(xyz_bdry, xyz_bdry+qr_n);\n";
   }
 
   std::cout << __FILE__ << " done" << std::endl;
