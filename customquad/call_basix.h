@@ -36,13 +36,6 @@ void call_basix(double***** FE,
   // Compute basis and derivatives. The shape is (derivative, point,
   // basis fn index, value index).
   std::vector<double> qr_pts(quadrature_points, quadrature_points+gdim*num_quadrature_points);
-
-  if (cell_type == 4) {
-    // Mirror quadrature points for quadrilaterals cells
-    for (std::size_t i = 0; i < num_quadrature_points; i += 2) 
-      std::swap(qr_pts[i], qr_pts[i+1]);
-  }
-
   auto [tab_data, shape] = lagrange.tabulate(nd, qr_pts, {num_quadrature_points, gdim});
 
   // Convenient format
@@ -63,10 +56,29 @@ void call_basix(double***** FE,
     }
   }
 
-  // Copy
+  // Permutation vector
+  std::vector<int> perm;
+  if (cell_type == 4) {
+    // Quad
+    if (degree == 1)
+      perm = {0, 2, 1, 3};
+    else if (degree == 2)
+      perm = {0, 2, 6, 8, 1, 3, 5, 7, 4};
+  }
+  else if (cell_type == 5) {
+    // Hex
+    if (degree == 1)
+      perm = {0,1,2,3,4,5,6,7};
+    else if (degree == 2)
+      perm = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26};
+  }
+  
+  assert(perm.size() == num_basis_functions);
+
+  // Copy with permutation  
   for (int i = 0; i < num_quadrature_points; ++i)
     for (int j = 0; j < num_basis_functions; ++j) 
-      (*FE)[0][0][i][j] = tab(basix_derivative, i, j, 0);
+      (*FE)[0][0][i][j] = tab(basix_derivative, i, perm[j], 0);
 
   bool debug_output = false;
   
