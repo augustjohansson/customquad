@@ -23,22 +23,40 @@ def get_num_cells(mesh):
 
 def get_num_faces(mesh):
     tdim = mesh.topology.dim
-    return get_num_entities(mesh, tdim)
+    return get_num_entities(mesh, tdim - 1)
+
+
+def get_num_nodes(mesh):
+    return get_num_entities(mesh, 0)
 
 
 def get_dofs(V):
+    """
+    customquad.assemble
+    (Pdb++) V
+    <dolfinx.cpp.fem.FunctionSpace object at 0x7fb5163b5eb0>
+    <dolfinx.cpp.fem.DofMap object at 0x7fb521c7ae30>
+    have list()
+
+    but if type(V) = <class 'dolfinx.fem.function.FunctionSpace'>
+    <dolfinx.fem.dofmap.DofMap object at 0x7fe5f7511360>
+    have V.dofmap.list
+
+    """
     num_cells = get_num_cells(V.mesh)
     num_loc_dofs = V.dofmap.dof_layout.num_dofs
-    dofs = V.dofmap.list().array.reshape(num_cells, num_loc_dofs)
+    try:
+        dofs = V.dofmap.list().array.reshape(num_cells, num_loc_dofs)
+    except:
+        dofs = V.dofmap.list.array.reshape(num_cells, num_loc_dofs)
     return dofs, num_loc_dofs
 
 
 def get_vertices(mesh):
     coords = mesh.geometry.x
     gdim = mesh.geometry.dim
-    num_loc_vertices = len(mesh.geometry.dofmap.links(0))  # FIXME Perhaps not the best
     num_cells = get_num_cells(mesh)
-    vertices = mesh.geometry.dofmap.array.reshape(num_cells, num_loc_vertices)
+    vertices = mesh.geometry.dofmap.array.reshape(num_cells, -1)
     return vertices, coords, gdim
 
 
@@ -110,7 +128,7 @@ def replicate(a, cells):
 
 def get_inactive_dofs(V, cut_cells, uncut_cells):
     dofs, _ = get_dofs(V)
-    num_vertices = V.mesh.topology.index_map(0).size_local
+    num_vertices = get_num_nodes(V.mesh)
     assert num_vertices == dofs.max() + 1  # P1 elements
     all_dofs = np.arange(0, num_vertices)
     for cells in [cut_cells, uncut_cells]:
@@ -301,13 +319,13 @@ def volume(xmin, xmax, NN, uncut_cells, qr_w):
     cellvol = np.prod((xmax - xmin)[0:gdim]) / np.prod(NN)
     cut_vol = sum(flatten(qr_w)) * cellvol
     uncut_vol = cellvol * len(uncut_cells)
-    volume = cut_vol + uncut_vol
-    return volume
+    v = cut_vol + uncut_vol
+    return v
 
 
 def area(xmin, xmax, NN, qr_w_bdry):
     flatten = lambda l: [item for sublist in l for item in sublist]
     gdim = len(NN)
     cellvol = np.prod((xmax - xmin)[0:gdim]) / np.prod(NN)
-    area = sum(flatten(qr_w_bdry)) * cellvol
-    return area
+    a = sum(flatten(qr_w_bdry)) * cellvol
+    return a
