@@ -26,6 +26,7 @@ parser.add_argument("-algoim", action="store_true")
 parser.add_argument("-reuse", action="store_true")
 parser.add_argument("-betaN", type=float, default=10.0)
 parser.add_argument("-betas", type=float, default=1.0)
+parser.add_argument("-domain", type=str, default="circle")
 args = parser.parse_args()
 print("arguments:")
 for arg in vars(args):
@@ -33,10 +34,6 @@ for arg in vars(args):
 
 resetdata = not args.reuse
 filename = "qrdata.pickle"
-do_gotools = not args.algoim
-domain = "circle"
-# domain = "square"
-# domain = "sphere"
 
 
 def write(filename, mesh, data):
@@ -55,7 +52,7 @@ def write(filename, mesh, data):
 
 
 # Domain
-if domain == "square":
+if args.domain == "square":
     xmin = np.array([-0.033, -0.023])
     xmax = np.array([1.1, 1.1])
     L2_exact = 0.25
@@ -63,7 +60,7 @@ if domain == "square":
     area_exact = 4.0
     gdim = 2
 
-elif domain == "circle":
+elif args.domain == "circle":
     xmin = np.array([-1.11, -1.51])
     xmax = np.array([1.55, 1.22])
     L2_exact = 0.93705920078336
@@ -71,7 +68,7 @@ elif domain == "circle":
     area_exact = 2 * np.pi
     gdim = 2
 
-elif domain == "sphere":
+elif args.domain == "sphere":
     assert args.algoim
     xmin = np.array([-1.11, -1.21, -1.23])
     xmax = np.array([1.23, 1.22, 1.11])
@@ -81,7 +78,7 @@ elif domain == "sphere":
     gdim = 3
 
 else:
-    RuntimeError("Unknown domain", domain)
+    RuntimeError("Unknown domain", args.domain)
 
 # Mesh
 NN = np.array([args.factor] * gdim, dtype=np.int32)
@@ -113,7 +110,9 @@ print("Generate qr")
     qr_n0,
     xyz,
     xyz_bdry,
-] = algoim_utils.generate_qr(mesh, NN, degree, filename, resetdata, domain, algoim_opts)
+] = algoim_utils.generate_qr(
+    mesh, NN, degree, filename, resetdata, args.domain, algoim_opts
+)
 
 print("num cells", customquad.utils.get_num_cells(mesh))
 print("num cut_cells", len(cut_cells))
@@ -283,7 +282,7 @@ print("Get inactive_dofs took", t.elapsed()[0])
 t = dolfinx.common.Timer()
 A = customquad.utils.lock_inactive_dofs(inactive_dofs, A)
 print("Lock inactive dofs took", t.elapsed()[0])
-# customquad.utils.dump("output/A_locked.txt", A)
+customquad.utils.dump("output/A_locked.txt", A)
 
 if not np.isfinite(A.norm()).all():
     RuntimeError()
@@ -326,8 +325,6 @@ def assemble(integrand):
     m_uncut = dolfinx.fem.assemble_scalar(
         dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
     )
-    print(f"{m_cut=}")
-    print(f"{m_uncut=}")
     return m_cut + m_uncut
 
 
@@ -388,5 +385,9 @@ if gdim == 2:
 
 # Print conv last
 h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
+conv = np.array(
+    [max(h), L2_val, L2_err, volume, volume_err, area, area_err, args.factor],
+)
 print("conv")
-print(max(h), L2_val, L2_err, volume, volume_err, area, area_err, args.factor)
+print(conv)
+np.savetxt("output/conv" + str(args.factor) + ".txt", conv.reshape(1, conv.shape[0]))
