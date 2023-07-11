@@ -161,13 +161,14 @@ def get_inactive_dofs(V, cut_cells, uncut_cells):
 
 
 def lock_inactive_dofs(inactive_dofs, A):
-    # dump("before.txt", A)
-
-    A.setOption(PETSc.Mat.Option.NEW_NONZERO_ALLOCATION_ERR, False)
-    A.zeroRows(inactive_dofs, 1)
-    A.setOption(PETSc.Mat.Option.NEW_NONZERO_ALLOCATION_ERR, True)
-
-    # dump("after.txt", A)
+    nnz = np.ones(size[0], dtype=np.int32)
+    A0 = PETSc.Mat().createAIJ(A.size, nnz=nnz, comm=A.comm)
+    diag = A.createVecLeft()
+    diag.array[:] = 0.0
+    diag.array[inactive_dofs] = 1.0
+    A0.setDiagonal(diag)
+    A0.assemble()
+    A += A0
 
     # check diagonal
     ad = A.getDiagonal()
@@ -177,9 +178,8 @@ def lock_inactive_dofs(inactive_dofs, A):
         for i in zeros[0]:
             A.setValue(i, i, 1.0)
         A.assemble()
-        breakpoint()
+        RuntimeError("Zeros on the diagonal should not happen")
 
-    # zeroRows(self, rows, diag=1, Vec x=None, Vec b=None)
     return A
 
 
@@ -190,9 +190,8 @@ def printer(s, a):
 
 def dump(filename, A, do_print=False):
     print(f"dump to {filename}")
-    import petsc4py
 
-    if isinstance(A, petsc4py.PETSc.Mat):
+    if isinstance(A, PETSc.Mat):
         assert A.assembled
         f = open(filename, "w")
         for r in range(A.size[0]):
@@ -204,7 +203,7 @@ def dump(filename, A, do_print=False):
                     print(s, end="")
         f.close()
         print(
-            f"A=load('{filename}');A=sparse(A(:,1),A(:,2),A(:,3)); condest(A), spy(A)"
+            f"A=load('{filename}'); A=sparse(A(:,1),A(:,2),A(:,3)); condest(A), spy(A)"
         )
     else:
         f = open(filename, "w")
