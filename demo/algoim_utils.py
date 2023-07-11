@@ -92,7 +92,7 @@ def create_list_of_arrays(v):
 
 
 # Main function
-def generate_qr(mesh, NN, degree, filename, resetdata, domain):
+def generate_qr(mesh, NN, degree, filename, resetdata, domain, opts=[]):
     """degree specifies the degree of the underlying one-dimensional
     Gaussian quadrature scheme and must satisfy 1 <= qo && qo <= 10.
     """
@@ -107,9 +107,13 @@ def generate_qr(mesh, NN, degree, filename, resetdata, domain):
         RuntimeError("unknown domain", domain)
 
     cppyy.include(hppfile)
-    do_verbose = False
     do_map = True
     do_scale = True
+
+    if opts == []:
+        do_verbose = False
+    else:
+        do_verbose = opts["verbose"]
 
     gdim = mesh.geometry.dim
     num_cells = np.prod(NN)
