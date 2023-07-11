@@ -95,48 +95,12 @@ print(f"{NN=}")
 print(f"{xmin=}")
 print(f"{xmax=}")
 mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
-n = ufl.FacetNormal(mesh)
-h = ufl.CellDiameter(mesh)
 assert mesh.geometry.dim == gdim
-
-# FEM
-V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
-u = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-f = dolfinx.fem.Function(V)
-g = dolfinx.fem.Function(V)
-x = ufl.SpatialCoordinate(mesh)
 assert gdim == 2
-
-
-def exact_solution(x, do_ufl):
-    if do_ufl:
-        x = ufl.SpatialCoordinate(mesh)
-        # return ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
-        return 1.0 + 1e-14 * x[0]  # x[0] + x[1]
-    else:
-        # return np.sin(np.pi * x[0]) * np.sin(np.pi * x[1])
-        return 1.0 + 1e-14 * x[0]  # x[0] + x[1]
-
-
-# g.interpolate(lambda x: exact_solution(x, False))
-# f = -ufl.div(ufl.grad(exact_solution(x, True)))
-g.interpolate(lambda x: 0.0 + 1e-14 * x[0])
-f.interpolate(lambda x: 1.0 + 1e-14 * x[0])
-
-# PDE
-betaN = args.betaN
-betas = args.betas
-a_bulk = inner(grad(u), grad(v))
-L_bulk = inner(f, v)
-a_bdry = (
-    -inner(dot(n, grad(u)), v) - inner(u, dot(n, grad(v))) + inner(betaN / h * u, v)
-)
-L_bdry = -inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
-a_stab = betas * avg(h) * inner(jump(n, grad(u)), jump(n, grad(v)))
 
 # Generate (or load) qr
 degree = 4
+algoim_opts = {"verbose": False}
 print("Generate qr")
 [
     cut_cells,
@@ -149,8 +113,9 @@ print("Generate qr")
     qr_n0,
     xyz,
     xyz_bdry,
-] = algoim_utils.generate_qr(mesh, NN, degree, filename, resetdata, domain)
+] = algoim_utils.generate_qr(mesh, NN, degree, filename, resetdata, domain, algoim_opts)
 
+print("num cells", customquad.utils.get_num_cells(mesh))
 print("num cut_cells", len(cut_cells))
 print("num uncut_cells", len(uncut_cells))
 print("num outside_cells", len(outside_cells))
@@ -162,8 +127,6 @@ qr_w = [qr_w0[k] for k in cut_cells]
 qr_pts_bdry = [qr_pts_bdry0[k] for k in cut_cells]
 qr_w_bdry = [qr_w_bdry0[k] for k in cut_cells]
 qr_n = [qr_n0[k] for k in cut_cells]
-# xyz = [xyz0[k] for k in cut_cells]
-# xyz_bdry = [xyz_bdry0[k] for k in cut_cells]
 
 # Set up cell tags and face tags
 uncut_cell_tag = 1
@@ -183,8 +146,44 @@ facetags = customquad.utils.get_facetags(
     mesh, cut_cells, outside_cells, ghost_penalty_tag=ghost_penalty_tag
 )
 
+write("output/celltags" + str(args.factor) + ".xdmf", mesh, celltags)
 
-write("output/mesh" + str(args.factor) + ".xdmf", mesh, celltags)
+# FEM
+V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
+u = ufl.TrialFunction(V)
+v = ufl.TestFunction(V)
+f = dolfinx.fem.Function(V)
+g = dolfinx.fem.Function(V)
+x = ufl.SpatialCoordinate(mesh)
+n = ufl.FacetNormal(mesh)
+h = ufl.CellDiameter(mesh)
+
+
+def exact_solution(x, do_ufl):
+    if do_ufl:
+        x = ufl.SpatialCoordinate(mesh)
+        return ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
+        # return 1.0 + 1e-14 * x[0]  # x[0] + x[1]
+    else:
+        return np.sin(np.pi * x[0]) * np.sin(np.pi * x[1])
+        # return 1.0 + 1e-14 * x[0]  # x[0] + x[1]
+
+
+g.interpolate(lambda x: exact_solution(x, False))
+f = -ufl.div(ufl.grad(exact_solution(x, True)))
+# g.interpolate(lambda x: 0.0 + 1e-14 * x[0])
+# f.interpolate(lambda x: 1.0 + 1e-14 * x[0])
+
+# PDE
+betaN = args.betaN
+betas = args.betas
+a_bulk = inner(grad(u), grad(v))
+L_bulk = inner(f, v)
+a_bdry = (
+    -inner(dot(n, grad(u)), v) - inner(u, dot(n, grad(v))) + inner(betaN / h * u, v)
+)
+L_bdry = -inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
+a_stab = betas * avg(h) * inner(jump(n, grad(u)), jump(n, grad(v)))
 
 # Integration using standard assembler (uncut cells, ghost penalty faces)
 dx_uncut = ufl.dx(subdomain_data=celltags, domain=mesh)
@@ -196,7 +195,9 @@ ax = dolfinx.fem.form(
 Lx = dolfinx.fem.form(L_bulk * dx_uncut(uncut_cell_tag))
 
 Ax = dolfinx.fem.petsc.assemble_matrix(ax)
+t = dolfinx.common.Timer()
 Ax.assemble()
+print("Assemble interior took", t.elapsed()[0])
 bx = dolfinx.fem.petsc.assemble_vector(Lx)
 
 # Integration using custom assembler (i.e. integrals over cut cells,
@@ -212,15 +213,23 @@ qr_bdry = [(cut_cells, qr_pts_bdry, qr_w_bdry, qr_n)]
 # FIXME make sure we can assemble over many forms
 form1 = dolfinx.fem.form(a_bulk * dx_cut)
 form2 = dolfinx.fem.form(a_bdry * ds_cut(cut_cell_tag))
-forms = [form1, form2]
-Ac1 = customquad.assemble_matrix(form1, qr_bulk)
-Ac2 = customquad.assemble_matrix(form2, qr_bdry)
-Ac1.assemble()
-Ac2.assemble()
+# forms = [form1, form2]
 
+t = dolfinx.common.Timer()
+Ac1 = customquad.assemble_matrix(form1, qr_bulk)
+Ac1.assemble()
+print("Runtime assemble bulk took", t.elapsed()[0])
+
+t = dolfinx.common.Timer()
+Ac2 = customquad.assemble_matrix(form2, qr_bdry)
+Ac2.assemble()
+print("Runtime assemble bdry took", t.elapsed()[0])
+
+t = dolfinx.common.Timer()
 A = Ax
 A += Ac1
 A += Ac2
+print("Matrix += took", t.elapsed()[0])
 
 L1 = dolfinx.fem.form(L_bulk * dx_cut)
 bc1 = customquad.assemble_vector(L1, qr_bulk)
@@ -228,16 +237,36 @@ b = bx
 b += bc1
 
 # L2 = dolfinx.fem.form(L_bdry * ds_cut(cut_cell_tag))
-# bc2 = customquad.assemble_vector(L2, qr_bdry)
-# b += bc2
+# print("cut_cell_tag", cut_cell_tag)
+# sd = ds_cut.subdomain_data()
+# print("indices", sd.indices)
+# print("values", sd.values)
+# print("cut cells", np.where(sd.values == cut_cell_tag))
+# print("should be the same as cut_cells", cut_cells)
+# cut_cell_midpoints = dolfinx.mesh.compute_midpoints(mesh, gdim, cut_cells)
+# np.set_printoptions(threshold=9999999)
+# print(cut_cell_midpoints)
+
+# areaform = dolfinx.fem.form(1.0 * ds_cut(cut_cell_tag))
+# cut_area = customquad.assemble_scalar(areaform, qr_bdry)
+# print(f"{cut_area}")
+# totareaform = dolfinx.fem.form(1.0 * ds_cut)
+# tot_cut_area = customquad.assemble_scalar(totareaform, qr_bdry)
+# print(f"{tot_cut_area}")
+
+# breakpoint()
+
+L2 = dolfinx.fem.form(L_bdry * ds_cut)
+bc2 = customquad.assemble_vector(L2, qr_bdry)
+b += bc2
 
 # Add up
 # A = Ax + Ac1 + Ac2
 # b = bx + bc1 + bc2
 
 # Check inf
-customquad.utils.dump("output/A.txt", A)
-customquad.utils.dump("output/b.txt", b)
+# customquad.utils.dump("output/A.txt", A)
+# customquad.utils.dump("output/b.txt", b)
 # customquad.utils.dump("output/bx.txt", bx)
 # customquad.utils.dump("output/bc1.txt", bc1)
 # customquad.utils.dump("output/bc2.txt", bc2)
@@ -248,9 +277,13 @@ if not np.isfinite(b.array).all():
 if not np.isfinite(A.norm()):
     RuntimeError()
 
+t = dolfinx.common.Timer()
 inactive_dofs = customquad.utils.get_inactive_dofs(V, cut_cells, uncut_cells)
+print("Get inactive_dofs took", t.elapsed()[0])
+t = dolfinx.common.Timer()
 A = customquad.utils.lock_inactive_dofs(inactive_dofs, A)
-customquad.utils.dump("output/A_locked.txt", A)
+print("Lock inactive dofs took", t.elapsed()[0])
+# customquad.utils.dump("output/A_locked.txt", A)
 
 if not np.isfinite(A.norm()).all():
     RuntimeError()
@@ -263,7 +296,10 @@ def ksp_solve(A, b):
     ksp.getPC().setType("lu")
     ksp.getPC().setFactorSolverType("mumps")
     vec = b.copy()
+    t = dolfinx.common.Timer()
     ksp.solve(b, vec)
+    print("Solve took", t.elapsed()[0])
+    print("Matrix size", len(b.array))
     vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     return vec
 
