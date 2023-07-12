@@ -161,7 +161,7 @@ def get_inactive_dofs(V, cut_cells, uncut_cells):
 
 
 def lock_inactive_dofs(inactive_dofs, A):
-    nnz = np.ones(size[0], dtype=np.int32)
+    nnz = np.ones(A.size[0], dtype=np.int32)
     A0 = PETSc.Mat().createAIJ(A.size, nnz=nnz, comm=A.comm)
     diag = A.createVecLeft()
     diag.array[:] = 0.0
