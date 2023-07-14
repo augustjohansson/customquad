@@ -1,7 +1,5 @@
 # Customquad
 
-## Description
-
 The Customquad library allows for custom quadrature rules to be used
 in FEniCSx (https://fenicsproject.org). By custom quadrature we mean
 user-specified quadrature rules in different elements specified at
