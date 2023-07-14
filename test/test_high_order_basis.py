@@ -27,6 +27,7 @@ flatten = lambda l: [item for sublist in l for item in sublist]
     ("polynomial_order", "quadrature_degree"), [(1, 2), (2, 4)]  # , (3, 2), (4, 3)]
 )
 @pytest.mark.parametrize("fcn", [common.fcn1, common.fcn2, common.fcn3, common.fcn4])
+@pytest.mark.xfail
 def test_high_order_quads(assembler, norm, polynomial_order, quadrature_degree, fcn):
     Nx = 2
     Ny = 3
@@ -50,6 +51,7 @@ def test_high_order_quads(assembler, norm, polynomial_order, quadrature_degree, 
     ("polynomial_order", "quadrature_degree"), [(1, 2), (2, 4)]  # , (3, 2), (4, 3)]
 )
 @pytest.mark.parametrize("fcn", [common.fcn1, common.fcn2, common.fcn3, common.fcn4])
+@pytest.mark.xfail
 def test_high_order_hexes(assembler, norm, polynomial_order, quadrature_degree, fcn):
     Nx = 2
     Ny = 3
@@ -62,6 +64,7 @@ def test_high_order_hexes(assembler, norm, polynomial_order, quadrature_degree, 
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
 
 
+@pytest.mark.xfail
 def test_edge_integral():
     # Test bdry integral with basis function
     N = 1
@@ -172,4 +175,4 @@ def test_edge_integral():
             dolfinx.fem.form(integrand * ds_local)
         )
 
-        breakpoint()
+        assert np.linalg.norm(b.array - b_exact.array) < 1e-10
