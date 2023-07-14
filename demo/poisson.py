@@ -21,12 +21,13 @@ import algoim_utils
 # os.environ['CC'] = "/usr/lib/ccache/c++" # visible in this process + all children
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-factor", type=int, default=4)
+parser.add_argument("-N", type=int, default=4)
 parser.add_argument("-algoim", action="store_true")
 parser.add_argument("-reuse", action="store_true")
 parser.add_argument("-betaN", type=float, default=10.0)
 parser.add_argument("-betas", type=float, default=1.0)
 parser.add_argument("-domain", type=str, default="circle")
+parser.add_argument("-verbose", action="store_true")
 args = parser.parse_args()
 print("arguments:")
 for arg in vars(args):
@@ -58,30 +59,27 @@ if args.domain == "square":
     L2_exact = 0.25
     volume_exact = 1.0
     area_exact = 4.0
-    gdim = 2
 
 elif args.domain == "circle":
     xmin = np.array([-1.11, -1.51])
     xmax = np.array([1.55, 1.22])
-    L2_exact = 0.93705920078336
+    L2_exact = 0.968018182052052
     volume_exact = np.pi
     area_exact = 2 * np.pi
-    gdim = 2
 
 elif args.domain == "sphere":
-    assert args.algoim
     xmin = np.array([-1.11, -1.21, -1.23])
     xmax = np.array([1.23, 1.22, 1.11])
-    L2_exact = 0.418879020470132  # 0.517767045525837
+    L2_exact = 0.835076026647649  # u = sin(pi*x)*sin(pi*y)*sin(pi*z)
     volume_exact = 4 * np.pi / 3
     area_exact = 4 * np.pi
-    gdim = 3
 
 else:
     RuntimeError("Unknown domain", args.domain)
 
 # Mesh
-NN = np.array([args.factor] * gdim, dtype=np.int32)
+gdim = len(xmin)
+NN = np.array([args.N] * gdim, dtype=np.int32)
 if gdim == 2:
     cell_type = dolfinx.mesh.CellType.quadrilateral
     mesh_generator = dolfinx.mesh.create_rectangle
@@ -93,12 +91,11 @@ print(f"{xmin=}")
 print(f"{xmax=}")
 mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
 assert mesh.geometry.dim == gdim
-assert gdim == 2
 
 # Generate (or load) qr
 degree = 4
-algoim_opts = {"verbose": False}
-print("Generate qr")
+algoim_opts = {"verbose": args.verbose}
+t = dolfinx.common.Timer()
 [
     cut_cells,
     uncut_cells,
@@ -113,6 +110,7 @@ print("Generate qr")
 ] = algoim_utils.generate_qr(
     mesh, NN, degree, filename, resetdata, args.domain, algoim_opts
 )
+print("Generating qr took", t.elapsed()[0])
 
 print("num cells", customquad.utils.get_num_cells(mesh))
 print("num cut_cells", len(cut_cells))
@@ -145,7 +143,7 @@ facetags = customquad.utils.get_facetags(
     mesh, cut_cells, outside_cells, ghost_penalty_tag=ghost_penalty_tag
 )
 
-write("output/celltags" + str(args.factor) + ".xdmf", mesh, celltags)
+write("output/celltags" + str(args.N) + ".xdmf", mesh, celltags)
 
 # FEM
 V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
@@ -158,18 +156,17 @@ n = ufl.FacetNormal(mesh)
 h = ufl.CellDiameter(mesh)
 
 
-def exact_solution(x, do_ufl):
-    if do_ufl:
-        x = ufl.SpatialCoordinate(mesh)
-        return ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1])
-        # return 1.0 + 1e-14 * x[0]  # x[0] + x[1]
-    else:
-        return np.sin(np.pi * x[0]) * np.sin(np.pi * x[1])
-        # return 1.0 + 1e-14 * x[0]  # x[0] + x[1]
+def exact_solution(x, backend):
+    u_tmp = backend.sin(backend.pi * x[0])
+    for d in range(1, gdim):
+        u_tmp *= backend.sin(backend.pi * x[d])
+    return u_tmp
+    # r = x[0] * x[0] + x[1] * x[1] + x[2] * x[2]
+    # return 1 - r
 
 
-g.interpolate(lambda x: exact_solution(x, False))
-f = -ufl.div(ufl.grad(exact_solution(x, True)))
+g.interpolate(lambda x: exact_solution(x, np))
+f = -ufl.div(ufl.grad(exact_solution(x, ufl)))
 # g.interpolate(lambda x: 0.0 + 1e-14 * x[0])
 # f.interpolate(lambda x: 1.0 + 1e-14 * x[0])
 
@@ -263,12 +260,12 @@ b += bc2
 # A = Ax + Ac1 + Ac2
 # b = bx + bc1 + bc2
 
-# Check inf
-# customquad.utils.dump("output/A.txt", A)
-# customquad.utils.dump("output/b.txt", b)
-# customquad.utils.dump("output/bx.txt", bx)
-# customquad.utils.dump("output/bc1.txt", bc1)
-# customquad.utils.dump("output/bc2.txt", bc2)
+if args.verbose:
+    customquad.utils.dump("output/A.txt", A)
+    customquad.utils.dump("output/b.txt", b)
+    customquad.utils.dump("output/bx.txt", bx)
+    customquad.utils.dump("output/bc1.txt", bc1)
+    customquad.utils.dump("output/bc2.txt", bc2)
 
 if not np.isfinite(b.array).all():
     RuntimeError()
@@ -282,7 +279,8 @@ print("Get inactive_dofs took", t.elapsed()[0])
 t = dolfinx.common.Timer()
 A = customquad.utils.lock_inactive_dofs(inactive_dofs, A)
 print("Lock inactive dofs took", t.elapsed()[0])
-customquad.utils.dump("output/A_locked.txt", A)
+if args.verbose:
+    customquad.utils.dump("output/A_locked.txt", A)
 
 if not np.isfinite(A.norm()).all():
     RuntimeError()
@@ -313,7 +311,7 @@ def vec_to_function(vec, V, tag="fcn"):
 # Solve
 vec = ksp_solve(A, b)
 u = vec_to_function(vec, V, "u")
-write("output/poisson" + str(args.factor) + ".xdmf", mesh, u)
+write("output/poisson" + str(args.N) + ".xdmf", mesh, u)
 if not np.isfinite(vec.array).all():
     RuntimeError("not finite")
 if not np.isfinite(u.vector.array).all():
@@ -330,7 +328,7 @@ def assemble(integrand):
 
 # L2 errors
 L2_integrand = inner(u, u)
-L2_val = assemble(L2_integrand)
+L2_val = np.sqrt(assemble(L2_integrand))
 L2_err = abs(L2_val - L2_exact) / L2_exact
 
 # Check functional assembly
@@ -354,12 +352,14 @@ print("qr area error", area_err)
 # Evaluate solution in qr to see that there aren't any spikes
 bb_tree = dolfinx.geometry.BoundingBoxTree(mesh, gdim)
 flatten = lambda l: [item for sublist in l for item in sublist]
-pts = np.reshape(flatten(xyz), (-1, 2))
-pts_bdry = np.reshape(flatten(xyz_bdry), (-1, 2))
+pts = np.reshape(flatten(xyz), (-1, gdim))
+pts_bdry = np.reshape(flatten(xyz_bdry), (-1, gdim))
 pts_midpt = dolfinx.mesh.compute_midpoints(mesh, gdim, uncut_cells)
 pts = np.append(pts, pts_bdry, axis=0)
 pts = np.append(pts, pts_midpt[:, 0:gdim], axis=0)
-pts = np.hstack((pts, np.zeros((pts.shape[0], 1))))
+if gdim == 2:
+    # Pad with zero column
+    pts = np.hstack((pts, np.zeros((pts.shape[0], 1))))
 
 cell_candidates = dolfinx.cpp.geometry.compute_collisions(bb_tree, pts)
 cells = dolfinx.cpp.geometry.compute_colliding_cells(mesh, cell_candidates, pts)
@@ -369,7 +369,7 @@ print("u in range", uvals.min(), uvals.max())
 if gdim == 2:
     # Save coordinates and solution for plotting
     axis = "axis tight; grid on; xlabel x; ylabel y;"
-    filename = "output/uu" + str(args.factor) + ".txt"
+    filename = "output/uu" + str(args.N) + ".txt"
     uu = pts
     uu[:, 2] = uvals
     np.savetxt(filename, uu)
@@ -378,16 +378,16 @@ if gdim == 2:
     # Save xy and error for plotting
     err = pts
     xy = [pts[:, 0], pts[:, 1]]
-    err[:, 2] = abs(exact_solution(xy, False) - uvals)
-    filename = "output/err" + str(args.factor) + ".txt"
+    err[:, 2] = abs(exact_solution(xy, np) - uvals)
+    filename = "output/err" + str(args.N) + ".txt"
     np.savetxt(filename, err)
     print(f"err=load('{filename}'); plot3(err(:,1),err(:,2),err(:,3),'.');{axis}")
 
 # Print conv last
 h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
 conv = np.array(
-    [max(h), L2_val, L2_err, volume, volume_err, area, area_err, args.factor],
+    [max(h), L2_val, L2_err, volume, volume_err, area, area_err, args.N],
 )
 print("conv")
 print(conv)
-np.savetxt("output/conv" + str(args.factor) + ".txt", conv.reshape(1, conv.shape[0]))
+np.savetxt("output/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
