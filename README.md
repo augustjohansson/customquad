@@ -1,13 +1,11 @@
 # Customquad
 
-## Description
-
 The Customquad library allows for custom quadrature rules to be used
 in FEniCSx (https://fenicsproject.org). By custom quadrature we mean
 user-specified quadrature rules in different elements specified at
 runtime. These can be used for performing surface and volume integrals
 over cut elements in methods such as CutFEM, TraceFEM and
-\phi-FEM. The user can also provide normals in the surface quadrature
+\phi-FEM. The user can also provide normals in the quadrature
 points.
 
 ## Dependencies
