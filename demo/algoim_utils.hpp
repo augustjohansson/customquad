@@ -1,4 +1,6 @@
-#include <vector>
+#ifndef CUSTOMQUAD_ALGOIM_UTILS_HPP
+#define CUSTOMQUAD_ALGOIM_UTILS_HPP
+
 #include "quadrature_general.hpp"
 
 namespace algoim_utils
@@ -43,7 +45,7 @@ namespace algoim_utils
 		    std::vector<std::vector<double>>& xyz,
 		    std::vector<std::vector<double>>& xyz_bdry)
   {
-    std::cout << "algoim_utils " << __FILE__ << ' ' << __FUNCTION__ << std::endl;
+    std::cout << __FILE__ << ' ' << __FUNCTION__ << std::endl;
 
     if (do_verbose) {
       std::cout << "LLx " << LLx.size() << '\n'
@@ -80,18 +82,18 @@ namespace algoim_utils
     xyz_bdry.resize(num_cells);
 
     for (std::size_t cell_no = 0; cell_no < num_cells; ++cell_no) {
-      algoim::uvector<double, gdim> min, max;
-      min(0) = LLx[cell_no];
-      min(1) = LLy[cell_no];
-      max(0) = URx[cell_no];
-      max(1) = URy[cell_no];
+      algoim::uvector<double, gdim> xmin, xmax;
+      xmin(0) = LLx[cell_no];
+      xmin(1) = LLy[cell_no];
+      xmax(0) = URx[cell_no];
+      xmax(1) = URy[cell_no];
       if (gdim == 3) {
-	min(2) = LLz[cell_no];
-	max(2) = URz[cell_no];
+	xmin(2) = LLz[cell_no];
+	xmax(2) = URz[cell_no];
       }
     
       const auto q_bdry = algoim::quadGen<gdim>
-	(phi, algoim::HyperRectangle<double, gdim>(min, max), gdim, side, degree);
+	(phi, algoim::HyperRectangle<double, gdim>(xmin, xmax), gdim, side, degree);
     
       if (q_bdry.nodes.size()) {
 	// Cut cell
@@ -113,11 +115,11 @@ namespace algoim_utils
 
 	// Bulk
 	const auto q_bulk = algoim::quadGen<gdim>
-	  (phi, algoim::HyperRectangle<double, gdim>(min, max), dim_bulk, side, degree);
+	  (phi, algoim::HyperRectangle<double, gdim>(xmin, xmax), dim_bulk, side, degree);
 	convert(q_bulk, gdim, qr_pts[cell_no], qr_w[cell_no]);
 	xyz[cell_no] = qr_pts[cell_no];
 
-	const algoim::uvector<double, gdim> dx(max - min);
+	const algoim::uvector<double, gdim> dx(xmax - xmin);
 	double vol = 1;
 	for (std::size_t d = 0; d < gdim; ++d)
 	  vol *= dx(d);
@@ -133,7 +135,7 @@ namespace algoim_utils
 	  auto map = [&](std::vector<double>& qr) {
 	    for (std::size_t i = 0; i < qr.size(); i += gdim) {
 	      for (std::size_t d = 0; d < gdim; ++d)
-		qr[i + d] = (qr[i + d] - min(d)) / dx(d);
+		qr[i + d] = (qr[i + d] - xmin(d)) / dx(d);
 	    }
 	  };
 	  map(qr_pts[cell_no]);
@@ -142,7 +144,7 @@ namespace algoim_utils
       }
       else {
 	// Either outside or inside
-	const algoim::uvector<double, gdim> midp(0.5 * (min + max));
+	const algoim::uvector<double, gdim> midp(0.5 * (xmin + xmax));
 	if (phi(midp) < 0)
 	  uncut_cells.push_back(cell_no);
 	else
@@ -186,12 +188,12 @@ namespace algoim_utils
 	  }
       };
 
-      std::cout << "% bulk [0,1]^2\n"
+      std::cout << "% bulk [0,1]^" << gdim << "\n"
 		<<"qr_pts=[";
       print(qr_pts);
       std::cout << "];\n";
 
-      std::cout << "% bdry [0,1]^2\n"
+      std::cout << "% bdry [0,1]^" << gdim << "\n"
 		<< "qr_pts_bdry=[";
       print(qr_pts_bdry);
       std::cout << "];\n";
@@ -214,3 +216,5 @@ namespace algoim_utils
     std::cout << __FILE__ << " done" << std::endl;
   }
 }
+
+#endif

@@ -1,7 +1,9 @@
-#include "algoim_utils.hpp"
-#include "quadrature_general.hpp"
+#ifndef CUSTOMQUAD_CIRCLE_HPP
+#define CUSTOMQUAD_CIRCLE_HPP
 
-template <int gdim>
+#include "algoim_utils.hpp"
+
+template<int gdim>
 struct Sphere
 {
   const double xc = 0;
@@ -74,3 +76,5 @@ void run(const std::vector<double>& LLx,
      qr_pts_bdry, qr_w_bdry, qr_n,
      xyz, xyz_bdry);
 }
+
+#endif
