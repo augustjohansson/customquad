@@ -101,7 +101,7 @@ To understand a bit how the modifications to ffcx is done, we can look
 in ffcx's cache directory (e.g. ~/.cache/fenics). Here there are files
 such as `libffcx_forms_...c` which contaian standard tabulate tensor
 functions that may look like
-```
+```cpp
 void tabulate_tensor_integral_a0f3282139356df733c38db2e5d422f3272a1d5c(double*  A,
 				    const double*  w,
 				    const double*  c,
@@ -129,7 +129,7 @@ provided. If the form involves normals, these must be provided in the
 quadrature points.
 
 A tabulate tensor function with runtime quadrature may look like this:
-```
+```cpp
 void tabulate_tensor_integral_3edb7c068402923a697d72e1b03e0957554f29c3(double* A,
 				    const double* w,
 				    const double* c,
