@@ -1,12 +1,3 @@
-"""This demo requires algoim, a header-only C++ library found at
-
-https://github.com/algoim/algoim/
-
-and the c++ to python library cppyy (installable by pip). The location
-of algoim can be set in algoim_utils.py.
-
-"""
-
 import dolfinx
 import customquad
 import ufl
@@ -17,13 +8,11 @@ from petsc4py import PETSc
 import argparse
 import algoim_utils
 
-# import os
-# os.environ['CC'] = "/usr/lib/ccache/c++" # visible in this process + all children
-
+# Setup arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("-N", type=int, default=4)
 parser.add_argument("-algoim", action="store_true")
-parser.add_argument("-reuse", action="store_true")
+parser.add_argument("-reuse", action="store_true", help="not tested thoroughly")
 parser.add_argument("-betaN", type=float, default=10.0)
 parser.add_argument("-betas", type=float, default=1.0)
 parser.add_argument("-domain", type=str, default="circle")
@@ -70,7 +59,7 @@ elif args.domain == "circle":
 elif args.domain == "sphere":
     xmin = np.array([-1.11, -1.21, -1.23])
     xmax = np.array([1.23, 1.22, 1.11])
-    L2_exact = 0.835076026647649  # u = sin(pi*x)*sin(pi*y)*sin(pi*z)
+    L2_exact = 0.835076026647649
     volume_exact = 4 * np.pi / 3
     area_exact = 4 * np.pi
 
@@ -111,7 +100,6 @@ t = dolfinx.common.Timer()
     mesh, NN, degree, filename, resetdata, args.domain, algoim_opts
 )
 print("Generating qr took", t.elapsed()[0])
-
 print("num cells", customquad.utils.get_num_cells(mesh))
 print("num cut_cells", len(cut_cells))
 print("num uncut_cells", len(uncut_cells))
@@ -143,6 +131,7 @@ facetags = customquad.utils.get_facetags(
     mesh, cut_cells, outside_cells, ghost_penalty_tag=ghost_penalty_tag
 )
 
+# Write cell tags
 write("output/celltags" + str(args.N) + ".xdmf", mesh, celltags)
 
 # FEM
@@ -161,10 +150,9 @@ def exact_solution(x, backend):
     for d in range(1, gdim):
         u_tmp *= backend.sin(backend.pi * x[d])
     return u_tmp
-    # r = x[0] * x[0] + x[1] * x[1] + x[2] * x[2]
-    # return 1 - r
 
 
+# Setup boundary traction and rhs
 g.interpolate(lambda x: exact_solution(x, np))
 f = -ufl.div(ufl.grad(exact_solution(x, ufl)))
 # g.interpolate(lambda x: 0.0 + 1e-14 * x[0])
@@ -181,19 +169,20 @@ a_bdry = (
 L_bdry = -inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
 a_stab = betas * avg(h) * inner(jump(n, grad(u)), jump(n, grad(v)))
 
-# Integration using standard assembler (uncut cells, ghost penalty faces)
+# Standard measures
 dx_uncut = ufl.dx(subdomain_data=celltags, domain=mesh)
 dS = ufl.dS(subdomain_data=facetags, domain=mesh)
 
+# Integration using standard assembler (uncut cells, ghost penalty
+# faces)
 ax = dolfinx.fem.form(
     a_bulk * dx_uncut(uncut_cell_tag) + a_stab * dS(ghost_penalty_tag)
 )
-Lx = dolfinx.fem.form(L_bulk * dx_uncut(uncut_cell_tag))
-
-Ax = dolfinx.fem.petsc.assemble_matrix(ax)
 t = dolfinx.common.Timer()
+Ax = dolfinx.fem.petsc.assemble_matrix(ax)
 Ax.assemble()
 print("Assemble interior took", t.elapsed()[0])
+Lx = dolfinx.fem.form(L_bulk * dx_uncut(uncut_cell_tag))
 bx = dolfinx.fem.petsc.assemble_vector(Lx)
 
 # Integration using custom assembler (i.e. integrals over cut cells,
@@ -209,7 +198,6 @@ qr_bdry = [(cut_cells, qr_pts_bdry, qr_w_bdry, qr_n)]
 # FIXME make sure we can assemble over many forms
 form1 = dolfinx.fem.form(a_bulk * dx_cut)
 form2 = dolfinx.fem.form(a_bdry * ds_cut(cut_cell_tag))
-# forms = [form1, form2]
 
 t = dolfinx.common.Timer()
 Ac1 = customquad.assemble_matrix(form1, qr_bulk)
@@ -232,33 +220,9 @@ bc1 = customquad.assemble_vector(L1, qr_bulk)
 b = bx
 b += bc1
 
-# L2 = dolfinx.fem.form(L_bdry * ds_cut(cut_cell_tag))
-# print("cut_cell_tag", cut_cell_tag)
-# sd = ds_cut.subdomain_data()
-# print("indices", sd.indices)
-# print("values", sd.values)
-# print("cut cells", np.where(sd.values == cut_cell_tag))
-# print("should be the same as cut_cells", cut_cells)
-# cut_cell_midpoints = dolfinx.mesh.compute_midpoints(mesh, gdim, cut_cells)
-# np.set_printoptions(threshold=9999999)
-# print(cut_cell_midpoints)
-
-# areaform = dolfinx.fem.form(1.0 * ds_cut(cut_cell_tag))
-# cut_area = customquad.assemble_scalar(areaform, qr_bdry)
-# print(f"{cut_area}")
-# totareaform = dolfinx.fem.form(1.0 * ds_cut)
-# tot_cut_area = customquad.assemble_scalar(totareaform, qr_bdry)
-# print(f"{tot_cut_area}")
-
-# breakpoint()
-
 L2 = dolfinx.fem.form(L_bdry * ds_cut)
 bc2 = customquad.assemble_vector(L2, qr_bdry)
 b += bc2
-
-# Add up
-# A = Ax + Ac1 + Ac2
-# b = bx + bc1 + bc2
 
 if args.verbose:
     customquad.utils.dump("output/A.txt", A)
@@ -267,12 +231,10 @@ if args.verbose:
     customquad.utils.dump("output/bc1.txt", bc1)
     customquad.utils.dump("output/bc2.txt", bc2)
 
-if not np.isfinite(b.array).all():
-    RuntimeError()
+assert np.isfinite(b.array).all()
+assert np.isfinite(A.norm())
 
-if not np.isfinite(A.norm()):
-    RuntimeError()
-
+# Lock inactive dofs
 t = dolfinx.common.Timer()
 inactive_dofs = customquad.utils.get_inactive_dofs(V, cut_cells, uncut_cells)
 print("Get inactive_dofs took", t.elapsed()[0])
@@ -281,12 +243,11 @@ A = customquad.utils.lock_inactive_dofs(inactive_dofs, A)
 print("Lock inactive dofs took", t.elapsed()[0])
 if args.verbose:
     customquad.utils.dump("output/A_locked.txt", A)
-
-if not np.isfinite(A.norm()).all():
-    RuntimeError()
+assert np.isfinite(A.norm()).all()
 
 
 def ksp_solve(A, b):
+    # Direct solver using mumps
     ksp = PETSc.KSP().create(mesh.comm)
     ksp.setOperators(A)
     ksp.setType("preonly")
@@ -312,10 +273,8 @@ def vec_to_function(vec, V, tag="fcn"):
 vec = ksp_solve(A, b)
 u = vec_to_function(vec, V, "u")
 write("output/poisson" + str(args.N) + ".xdmf", mesh, u)
-if not np.isfinite(vec.array).all():
-    RuntimeError("not finite")
-if not np.isfinite(u.vector.array).all():
-    RuntimeError("not finite")
+assert np.isfinite(vec.array).all()
+assert np.isfinite(u.vector.array).all()
 
 
 def assemble(integrand):
@@ -383,7 +342,7 @@ if gdim == 2:
     np.savetxt(filename, err)
     print(f"err=load('{filename}'); plot3(err(:,1),err(:,2),err(:,3),'.');{axis}")
 
-# Print conv last
+# Print
 h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
 conv = np.array(
     [max(h), L2_val, L2_err, volume, volume_err, area, area_err, args.N],
