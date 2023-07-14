@@ -8,6 +8,9 @@ over cut elements in methods such as CutFEM, TraceFEM and
 \phi-FEM. The user can also provide normals in the quadrature
 points.
 
+See the demo `poisson.py`, the tests and read the description below to
+see how to use the library.
+
 ## Dependencies
 
 In addition to dolfinx (https://github.com/FEniCS/dolfinx/) and basix
@@ -49,7 +52,6 @@ A bashrc file with useful aliases is provided in the utils directory.
 
 For the development of this library, the development of ffcx is the
 most challenging part. I have the following setup:
-
 ```
 git clone git@github.com:augustjohansson/customquad.git
 cd customquad
