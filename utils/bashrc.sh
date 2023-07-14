@@ -34,7 +34,7 @@ alias clear-cache='mkdir -p /root/.cache/fenics && \
 
 alias install-ufl='pushd . && \
                    cd /root/ufl-custom && \
-                   pip3 install -v . -U && \
+                   pip3 install -v . -U --force-reinstall && \
                    popd'
 
 alias install-ffcx='pushd . && \
