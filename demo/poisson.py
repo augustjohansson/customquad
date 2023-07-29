@@ -10,9 +10,8 @@ import algoim_utils
 
 # Setup arguments
 parser = argparse.ArgumentParser()
-parser.add_argument("-N", type=int, default=4)
+parser.add_argument("-N", type=int, default=16)
 parser.add_argument("-algoim", action="store_true")
-parser.add_argument("-reuse", action="store_true", help="not tested thoroughly")
 parser.add_argument("-betaN", type=float, default=10.0)
 parser.add_argument("-betas", type=float, default=1.0)
 parser.add_argument("-domain", type=str, default="circle")
@@ -21,9 +20,6 @@ args = parser.parse_args()
 print("arguments:")
 for arg in vars(args):
     print("\t", arg, getattr(args, arg))
-
-resetdata = not args.reuse
-filename = "qrdata.pickle"
 
 
 def write(filename, mesh, data):
@@ -42,14 +38,7 @@ def write(filename, mesh, data):
 
 
 # Domain
-if args.domain == "square":
-    xmin = np.array([-0.033, -0.023])
-    xmax = np.array([1.1, 1.1])
-    L2_exact = 0.25
-    volume_exact = 1.0
-    area_exact = 4.0
-
-elif args.domain == "circle":
+if args.domain == "circle":
     xmin = np.array([-1.11, -1.51])
     xmax = np.array([1.55, 1.22])
     L2_exact = 0.968018182052052
@@ -57,8 +46,8 @@ elif args.domain == "circle":
     area_exact = 2 * np.pi
 
 elif args.domain == "sphere":
-    xmin = np.array([-1.11, -1.21, -1.23])
-    xmax = np.array([1.23, 1.22, 1.11])
+    xmin = np.array([-1.11, -1.51, -1.23])
+    xmax = np.array([1.55, 1.22, 1.11])
     L2_exact = 0.835076026647649
     volume_exact = 4 * np.pi / 3
     area_exact = 4 * np.pi
@@ -81,8 +70,8 @@ print(f"{xmax=}")
 mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
 assert mesh.geometry.dim == gdim
 
-# Generate (or load) qr
-degree = 4
+# Generate qr
+degree = 1
 algoim_opts = {"verbose": args.verbose}
 t = dolfinx.common.Timer()
 [
@@ -96,9 +85,11 @@ t = dolfinx.common.Timer()
     qr_n0,
     xyz,
     xyz_bdry,
-] = algoim_utils.generate_qr(
-    mesh, NN, degree, filename, resetdata, args.domain, algoim_opts
-)
+] = algoim_utils.generate_qr(mesh, NN, degree, args.domain, algoim_opts)
+
+if args.verbose:
+    print(f"drawgrid([{xmin}],[{xmax}],[{NN}],gcf);")
+
 print("Generating qr took", t.elapsed()[0])
 print("num cells", customquad.utils.get_num_cells(mesh))
 print("num cut_cells", len(cut_cells))
@@ -271,10 +262,10 @@ def vec_to_function(vec, V, tag="fcn"):
 
 # Solve
 vec = ksp_solve(A, b)
-u = vec_to_function(vec, V, "u")
-write("output/poisson" + str(args.N) + ".xdmf", mesh, u)
+uh = vec_to_function(vec, V, "uh")
+write("output/poisson" + str(args.N) + ".xdmf", mesh, uh)
 assert np.isfinite(vec.array).all()
-assert np.isfinite(u.vector.array).all()
+assert np.isfinite(uh.vector.array).all()
 
 
 def assemble(integrand):
@@ -286,7 +277,7 @@ def assemble(integrand):
 
 
 # L2 errors
-L2_integrand = inner(u, u)
+L2_integrand = inner(uh, uh)
 L2_val = np.sqrt(assemble(L2_integrand))
 L2_err = abs(L2_val - L2_exact) / L2_exact
 
@@ -322,22 +313,22 @@ if gdim == 2:
 
 cell_candidates = dolfinx.cpp.geometry.compute_collisions(bb_tree, pts)
 cells = dolfinx.cpp.geometry.compute_colliding_cells(mesh, cell_candidates, pts)
-uvals = u.eval(pts, cells.array).flatten()
-print("u in range", uvals.min(), uvals.max())
+uh_vals = uh.eval(pts, cells.array).flatten()
+print("uh in range", uh_vals.min(), uh_vals.max())
 
 if gdim == 2:
     # Save coordinates and solution for plotting
     axis = "axis tight; grid on; xlabel x; ylabel y;"
     filename = "output/uu" + str(args.N) + ".txt"
     uu = pts
-    uu[:, 2] = uvals
+    uu[:, 2] = uh_vals
     np.savetxt(filename, uu)
     print(f"uu=load('{filename}'); plot3(uu(:,1),uu(:,2),uu(:,3),'.');{axis}")
 
     # Save xy and error for plotting
     err = pts
     xy = [pts[:, 0], pts[:, 1]]
-    err[:, 2] = abs(exact_solution(xy, np) - uvals)
+    err[:, 2] = abs(exact_solution(xy, np) - uh_vals)
     filename = "output/err" + str(args.N) + ".txt"
     np.savetxt(filename, err)
     print(f"err=load('{filename}'); plot3(err(:,1),err(:,2),err(:,3),'.');{axis}")
@@ -347,6 +338,6 @@ h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
 conv = np.array(
     [max(h), L2_val, L2_err, volume, volume_err, area, area_err, args.N],
 )
-print("conv")
+
 print(conv)
 np.savetxt("output/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
