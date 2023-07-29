@@ -82,9 +82,6 @@ def create_int_array(vec):
 
 
 def create_list_of_arrays(v):
-    # w = list()
-    # for i in range(len(v)):
-    #     w.append(create_double_array(v[i]))
     w = [None] * len(v)
     for i in range(len(v)):
         w[i] = create_double_array(v[i])
@@ -92,7 +89,7 @@ def create_list_of_arrays(v):
 
 
 # Main function
-def generate_qr(mesh, NN, degree, filename, resetdata, domain, opts=[]):
+def generate_qr(mesh, NN, degree, domain, opts=[]):
     """degree specifies the degree of the underlying one-dimensional
     Gaussian quadrature scheme and must satisfy 1 <= qo && qo <= 10.
     """
