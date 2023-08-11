@@ -5,7 +5,7 @@ from .setup_types import ffi, PETSc
 from . import utils
 
 
-def assemble_scalar(form, qr_data):
+def assemble_scalar(form, qr_data, perm):
     vertices, coords, _ = utils.get_vertices(form.mesh)
     integral_ids = form.integral_ids(dolfinx.cpp.fem.IntegralType.cell)
     all_coeffs = dolfinx.cpp.fem.pack_coefficients(form)
@@ -21,21 +21,13 @@ def assemble_scalar(form, qr_data):
 
         coeffs = all_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)]
 
-        assemble_cells(
-            m,
-            kernel,
-            vertices,
-            coords,
-            coeffs,
-            consts,
-            qr_data[i],
-        )
+        assemble_cells(m, kernel, vertices, coords, coeffs, consts, qr_data[i], perm)
 
     return m[0]
 
 
 @numba.njit  # (fastmath=True)
-def assemble_cells(m, kernel, vertices, coords, coeffs, consts, qr):
+def assemble_cells(m, kernel, vertices, coords, coeffs, consts, qr, perm):
     # Unpack qr
     if len(qr) == 3:
         cells, qr_pts, qr_w = qr
@@ -59,7 +51,7 @@ def assemble_cells(m, kernel, vertices, coords, coeffs, consts, qr):
     entity_local_index = np.array([0], dtype=np.intc)
 
     # Don't permute
-    perm = np.array([0], dtype=np.uint8)
+    perm = np.array(perm, dtype=np.uint8)
 
     for k, cell in enumerate(cells):
         cell_coords[:, :] = coords[vertices[cell, :]]

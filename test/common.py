@@ -36,7 +36,9 @@ def matrix_norm(x):
     return x.norm()
 
 
-def assemble_scalar_test(mesh, fiat_element, polynomial_order, quadrature_degree, fcn):
+def assemble_scalar_test(
+    mesh, fiat_element, polynomial_order, quadrature_degree, fcn, perm
+):
     # Setup integrand
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
     f = dolfinx.fem.Function(V)
@@ -50,7 +52,7 @@ def assemble_scalar_test(mesh, fiat_element, polynomial_order, quadrature_degree
     q = FIAT.create_quadrature(fiat_element, quadrature_degree)
     qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
     qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
-    b = cq.assemble_scalar(L, [(cells, qr_pts, qr_w)])
+    b = cq.assemble_scalar(L, [(cells, qr_pts, qr_w)], perm)
 
     # Reference
     L_ref = dolfinx.fem.form(integrand * ufl.dx)
@@ -59,7 +61,9 @@ def assemble_scalar_test(mesh, fiat_element, polynomial_order, quadrature_degree
     return b, b_ref
 
 
-def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree, fcn):
+def assemble_vector_test(
+    mesh, fiat_element, polynomial_order, quadrature_degree, fcn, perm
+):
     # Setup integrand
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
     v = ufl.TestFunction(V)
@@ -74,7 +78,7 @@ def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree
     q = FIAT.create_quadrature(fiat_element, quadrature_degree)
     qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
     qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
-    b = cq.assemble_vector(L, [(cells, qr_pts, qr_w)])
+    b = cq.assemble_vector(L, [(cells, qr_pts, qr_w)], perm)
 
     # Reference
     L_ref = dolfinx.fem.form(integrand * ufl.dx)
@@ -83,7 +87,9 @@ def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree
     return b, b_ref
 
 
-def assemble_matrix_test(mesh, fiat_element, polynomial_order, quadrature_degree, fcn):
+def assemble_matrix_test(
+    mesh, fiat_element, polynomial_order, quadrature_degree, fcn, perm
+):
     # Setup integrand
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
     u = ufl.TrialFunction(V)
@@ -97,7 +103,7 @@ def assemble_matrix_test(mesh, fiat_element, polynomial_order, quadrature_degree
     q = FIAT.create_quadrature(fiat_element, quadrature_degree)
     qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
     qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
-    A = cq.assemble_matrix(L, [(cells, qr_pts, qr_w)])
+    A = cq.assemble_matrix(L, [(cells, qr_pts, qr_w)], perm)
     A.assemble()
 
     # Reference

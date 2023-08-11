@@ -7,7 +7,7 @@ from . import utils
 # See assemble_matrix_cffi in test_custom_assembler
 
 
-def assemble_matrix(form, qr_data):
+def assemble_matrix(form, qr_data, perm):
     V = form.function_spaces[0]
     dofs, num_loc_dofs = utils.get_dofs(V)
     vertices, coords, gdim = utils.get_vertices(V.mesh)
@@ -42,6 +42,7 @@ def assemble_matrix(form, qr_data):
             qr_data[i],
             set_vals,
             mode,
+            perm,
         )
 
     return A
@@ -60,6 +61,7 @@ def assemble_cells(
     qr,
     set_vals,
     mode,
+    perm,
 ):
     # Unpack qr
     if len(qr) == 3:
@@ -79,7 +81,7 @@ def assemble_cells(
     entity_local_index = np.array([0], dtype=np.intc)
 
     # Don't permute
-    perm = np.array([0], dtype=np.uint8)
+    perm = np.array(perm, dtype=np.uint8)
 
     for k, cell in enumerate(cells):
         pos = dofmap[cell, :]

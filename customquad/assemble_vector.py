@@ -5,7 +5,7 @@ from .setup_types import ffi, PETSc
 from . import utils
 
 
-def assemble_vector(form, qr_data):
+def assemble_vector(form, qr_data, perm):
     # qr_data is a list of tuples containing (cells, qr_pts, qr_w,
     # qr_n) (both for volume and surface integrals). Here, each of
     # qr_pts, qr_w and qr_n should be list(numpy.array) with len(list)
@@ -44,13 +44,16 @@ def assemble_vector(form, qr_data):
             coeffs,
             consts,
             qr_data[i],
+            perm,
         )
 
     return b
 
 
 @numba.njit  # (fastmath=True)
-def assemble_cells(b, kernel, vertices, coords, dofs, num_loc_dofs, coeffs, consts, qr):
+def assemble_cells(
+    b, kernel, vertices, coords, dofs, num_loc_dofs, coeffs, consts, qr, perm
+):
     # Unpack qr
     if len(qr) == 3:
         cells, qr_pts, qr_w = qr
@@ -69,7 +72,7 @@ def assemble_cells(b, kernel, vertices, coords, dofs, num_loc_dofs, coeffs, cons
     entity_local_index = np.array([0], dtype=np.intc)
 
     # Don't permute
-    perm = np.array([0], dtype=np.uint8)
+    perm = np.array(perm, dtype=np.uint8)
 
     for k, cell in enumerate(cells):
         cell_coords[:, :] = coords[vertices[cell, :]]

@@ -12,14 +12,15 @@ namespace stdex = std::experimental;
 using cmdspan4_t = stdex::mdspan<const double, stdex::dextents<std::size_t, 4>>;
 
 void call_basix(double***** FE,
-                int num_quadrature_points,
+                std::size_t num_quadrature_points,
                 const double* quadrature_points,
                 int basix_derivative,
                 int family,
                 int cell_type,
                 int degree,
                 int /* lattice_type */,
-                int gdim)
+                std::size_t gdim,
+		const uint8_t* perm)
 {
 
   
@@ -27,7 +28,7 @@ void call_basix(double***** FE,
   basix::FiniteElement lagrange = basix::create_element(basix::element::family(family),
 							basix::cell::type(cell_type),
 							degree,
-							basix::element::lagrange_variant::unset);
+							basix::element::lagrange_variant::equispaced);
 
   // Number of derivatives to obtain (0 or first order for now)
   // FIXME Handle derivatives of higher order.
@@ -40,7 +41,7 @@ void call_basix(double***** FE,
 
   // Convenient format
   cmdspan4_t tab(tab_data.data(), shape);
-  const int num_basis_functions = tab.extent(2);
+  const std::size_t num_basis_functions = tab.extent(2);
 
   // Check size
   assert(tab.extent(1) == num_quadrature_points);
@@ -51,33 +52,37 @@ void call_basix(double***** FE,
     (*FE)[i] = new double**[1];
     for (int j = 0; j < 1; ++j)	{
       (*FE)[i][j] = new double*[num_quadrature_points];
-      for (int k = 0; k < num_quadrature_points; ++k)
+      for (std::size_t k = 0; k < num_quadrature_points; ++k)
 	(*FE)[i][j][k] = new double[num_basis_functions];
     }
   }
 
-  // Permutation vector
-  std::vector<int> perm;
-  if (cell_type == 4) {
-    // Quad
-    if (degree == 1)
-      perm = {0, 2, 1, 3};
-    else if (degree == 2)
-      perm = {0, 2, 6, 8, 1, 3, 5, 7, 4};
-  }
-  else if (cell_type == 5) {
-    // Hex
-    if (degree == 1)
-      perm = {0,1,2,3,4,5,6,7};
-    else if (degree == 2)
-      perm = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26};
-  }
+  // // Permutation vector
+  // std::vector<int> perm;
+  // if (cell_type == 4) {
+  //   // Quad
+  //   if (degree == 1)
+  //     perm = {0, 2, 1, 3};
+  //   else if (degree == 2)
+  //     //perm = {0, 2, 6, 8, 1, 3, 5, 7, 4};
+  //     //perm = {0, 1,2,3,4,5,6,7,8};
+  //     //perm = {0,4,1,5,8,6,2,7,3};
+  //     //perm = {0,2,8,1,3,5,7,4};
+  //     perm = {0,1,2,3,4,5,6,7,8};
+  // }
+  // else if (cell_type == 5) {
+  //   // Hex
+  //   if (degree == 1)
+  //     perm = {0, 1, 2, 3, 4, 5, 6, 7};
+  //   else if (degree == 2)
+  //     perm = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26};
+  // }
   
-  assert(perm.size() == num_basis_functions);
+  // assert(perm.size() == num_basis_functions);
 
   // Copy with permutation  
-  for (int i = 0; i < num_quadrature_points; ++i)
-    for (int j = 0; j < num_basis_functions; ++j) 
+  for (std::size_t i = 0; i < num_quadrature_points; ++i)
+    for (std::size_t j = 0; j < num_basis_functions; ++j) 
       (*FE)[0][0][i][j] = tab(basix_derivative, i, perm[j], 0);
 
   bool debug_output = false;
@@ -89,18 +94,18 @@ void call_basix(double***** FE,
     f.open(ss.str());
     f << "basix_derivative=" << basix_derivative << " family " << family << " cell_type " << cell_type << " degree " << degree << " gdim " << gdim << "\n";
     f << "tab table copied to FE[0][0][i][j]:\n";
-    for (int i = 0; i < num_quadrature_points; ++i)
-      for (int j = 0; j < num_basis_functions; ++j) 
+    for (std::size_t i = 0; i < num_quadrature_points; ++i)
+      for (std::size_t j = 0; j < num_basis_functions; ++j) 
 	f << i << ' ' << j << ' ' << (*FE)[0][0][i][j] << '\n';
     f << "I.e. the i j matrix looks like\n";
-    for (int i = 0; i < num_quadrature_points; ++i) {
-      for (int j = 0; j < num_basis_functions; ++j) 
+    for (std::size_t i = 0; i < num_quadrature_points; ++i) {
+      for (std::size_t j = 0; j < num_basis_functions; ++j) 
 	f << (*FE)[0][0][i][j] << ' ';
       f << '\n';
     }
     f << "quadrature points:\n";
-    for (int i = 0; i < num_quadrature_points; ++i)
-      for (int d = 0; d < gdim; ++d)
+    for (std::size_t i = 0; i < num_quadrature_points; ++i)
+      for (std::size_t d = 0; d < gdim; ++d)
 	f << quadrature_points[gdim*i+d] << ' ';
     f << '\n';
     f << "tab shape: ";
