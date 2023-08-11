@@ -63,7 +63,7 @@ void call_basix(double***** FE,
     if (degree == 1)
       perm = {0, 2, 1, 3};
     else if (degree == 2)
-      perm = {0, 2, 6, 8, 1, 3, 5, 7, 4};
+      perm = {0, 1, 2, 3, 4, 5, 6, 7, 8};
   }
   else if (cell_type == 5) {
     // Hex

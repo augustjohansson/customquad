@@ -27,7 +27,6 @@ flatten = lambda l: [item for sublist in l for item in sublist]
     ("polynomial_order", "quadrature_degree"), [(1, 2), (2, 4)]  # , (3, 2), (4, 3)]
 )
 @pytest.mark.parametrize("fcn", [common.fcn1, common.fcn2, common.fcn3, common.fcn4])
-@pytest.mark.xfail
 def test_high_order_quads(assembler, norm, polynomial_order, quadrature_degree, fcn):
     Nx = 2
     Ny = 3
@@ -48,7 +47,7 @@ def test_high_order_quads(assembler, norm, polynomial_order, quadrature_degree, 
     ],
 )
 @pytest.mark.parametrize(
-    ("polynomial_order", "quadrature_degree"), [(1, 2), (2, 4)]  # , (3, 2), (4, 3)]
+    ("polynomial_order", "quadrature_degree"), [(1, 1), (2, 2)]  # , (3, 2), (4, 3)]
 )
 @pytest.mark.parametrize("fcn", [common.fcn1, common.fcn2, common.fcn3, common.fcn4])
 @pytest.mark.xfail
