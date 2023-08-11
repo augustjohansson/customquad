@@ -21,13 +21,12 @@ void call_basix(double***** FE,
                 int /* lattice_type */,
                 int gdim)
 {
-
   
   // Create the lagrange element
   basix::FiniteElement lagrange = basix::create_element(basix::element::family(family),
 							basix::cell::type(cell_type),
 							degree,
-							basix::element::lagrange_variant::unset);
+							basix::element::lagrange_variant::equispaced);
 
   // Number of derivatives to obtain (0 or first order for now)
   // FIXME Handle derivatives of higher order.
@@ -57,13 +56,19 @@ void call_basix(double***** FE,
   }
 
   // Permutation vector
-  std::vector<int> perm;
-  if (cell_type == 4) {
+  std::vector<int> perm(num_basis_functions);
+  if (cell_type == 4) {    
     // Quad
-    if (degree == 1)
-      perm = {0, 2, 1, 3};
-    else if (degree == 2)
-      perm = {0, 1, 2, 3, 4, 5, 6, 7, 8};
+    if (degree == 1) {
+      perm[0] = 0;
+      perm[1] = 2;
+      perm[2] = 1;
+      perm[3] = 3;
+    }
+    else {
+      for (int i = 0; i < num_basis_functions; ++i)
+	perm[i] = i;
+    }
   }
   else if (cell_type == 5) {
     // Hex
@@ -80,14 +85,22 @@ void call_basix(double***** FE,
     for (int j = 0; j < num_basis_functions; ++j) 
       (*FE)[0][0][i][j] = tab(basix_derivative, i, perm[j], 0);
 
-  bool debug_output = false;
+  bool debug_output = true;
   
   if (debug_output) {
     std::ofstream f;
     std::stringstream ss;
     ss << "/tmp/call_basix" << reinterpret_cast<void*>(FE) << ".txt";
     f.open(ss.str());
-    f << "basix_derivative=" << basix_derivative << " family " << family << " cell_type " << cell_type << " degree " << degree << " gdim " << gdim << "\n";
+    f << ss.str() << '\n'
+      << "num_quadrature_points " << num_quadrature_points
+      << "\nbasix_derivative " << basix_derivative
+      << "\nfamily " << family
+      << "\ncell_type " << cell_type
+      << "\ndegree " << degree
+      << "\ngdim " << gdim
+      << "\nnd " << nd 
+      << "\nnum_basis_functions " << num_basis_functions << '\n';
     f << "tab table copied to FE[0][0][i][j]:\n";
     for (int i = 0; i < num_quadrature_points; ++i)
       for (int j = 0; j < num_basis_functions; ++j) 
