@@ -41,22 +41,33 @@ def write(filename, mesh, data):
 if args.domain == "circle":
     xmin = np.array([-1.11, -1.51])
     xmax = np.array([1.55, 1.22])
-    L2_exact = 0.968018182052052
     volume_exact = np.pi
     area_exact = 2 * np.pi
 
 elif args.domain == "sphere":
     xmin = np.array([-1.11, -1.51, -1.23])
     xmax = np.array([1.55, 1.22, 1.11])
-    L2_exact = 0.835076026647649
     volume_exact = 4 * np.pi / 3
     area_exact = 4 * np.pi
 
 else:
     RuntimeError("Unknown domain", args.domain)
 
-# Mesh
 gdim = len(xmin)
+
+
+def u_exact(backend):
+    if gdim == 2:
+        return lambda x: backend.sin(backend.pi * x[0]) * backend.sin(backend.pi * x[1])
+    else:
+        return (
+            lambda x: backend.sin(backend.pi * x[0])
+            * backend.sin(backend.pi * x[1])
+            * backend.sin(backend.pi * x[2])
+        )
+
+
+# Mesh
 NN = np.array([args.N] * gdim, dtype=np.int32)
 if gdim == 2:
     cell_type = dolfinx.mesh.CellType.quadrilateral
@@ -129,23 +140,14 @@ write("output/celltags" + str(args.N) + ".xdmf", mesh, celltags)
 V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
-f = dolfinx.fem.Function(V)
 g = dolfinx.fem.Function(V)
 x = ufl.SpatialCoordinate(mesh)
 n = ufl.FacetNormal(mesh)
 h = ufl.CellDiameter(mesh)
 
-
-def exact_solution(x, backend):
-    u_tmp = backend.sin(backend.pi * x[0])
-    for d in range(1, gdim):
-        u_tmp *= backend.sin(backend.pi * x[d])
-    return u_tmp
-
-
 # Setup boundary traction and rhs
-g.interpolate(lambda x: exact_solution(x, np))
-f = -ufl.div(ufl.grad(exact_solution(x, ufl)))
+g.interpolate(u_exact(np))
+f = -ufl.div(ufl.grad(u_exact(ufl)(x)))
 # g.interpolate(lambda x: 0.0 + 1e-14 * x[0])
 # f.interpolate(lambda x: 1.0 + 1e-14 * x[0])
 
@@ -253,16 +255,12 @@ def ksp_solve(A, b):
     return vec
 
 
-def vec_to_function(vec, V, tag="fcn"):
-    uh = dolfinx.fem.Function(V)
-    uh.vector.setArray(vec.array)
-    uh.name = tag
-    return uh
-
-
 # Solve
 vec = ksp_solve(A, b)
-uh = vec_to_function(vec, V, "uh")
+uh = dolfinx.fem.Function(V)
+uh.vector.setArray(vec.array)
+uh.name = "uh"
+
 write("output/poisson" + str(args.N) + ".xdmf", mesh, uh)
 assert np.isfinite(vec.array).all()
 assert np.isfinite(uh.vector.array).all()
@@ -276,10 +274,13 @@ def assemble(integrand):
     return m_cut + m_uncut
 
 
-# L2 errors
-L2_integrand = inner(uh, uh)
-L2_val = np.sqrt(assemble(L2_integrand))
-L2_err = abs(L2_val - L2_exact) / L2_exact
+# L2 errors: beware of cancellation
+L2_integrand = (uh - u_exact(ufl)(x)) ** 2
+L2_err = np.sqrt(assemble(L2_integrand))
+
+# H10 errors
+H10_integrand = (grad(uh) - grad(u_exact(ufl)(x))) ** 2
+H10_err = np.sqrt(assemble(H10_integrand))
 
 # Check functional assembly
 area_func = customquad.assemble_scalar(
@@ -328,7 +329,7 @@ if gdim == 2:
     # Save xy and error for plotting
     err = pts
     xy = [pts[:, 0], pts[:, 1]]
-    err[:, 2] = abs(exact_solution(xy, np) - uh_vals)
+    err[:, 2] = abs(u_exact(np)(xy) - uh_vals)
     filename = "output/err" + str(args.N) + ".txt"
     np.savetxt(filename, err)
     print(f"err=load('{filename}'); plot3(err(:,1),err(:,2),err(:,3),'.');{axis}")
@@ -336,7 +337,16 @@ if gdim == 2:
 # Print
 h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
 conv = np.array(
-    [max(h), L2_val, L2_err, volume, volume_err, area, area_err, args.N],
+    [
+        max(h),
+        L2_err,
+        H10_err,
+        volume,
+        volume_err,
+        area,
+        area_err,
+        args.N,
+    ],
 )
 
 print(conv)
