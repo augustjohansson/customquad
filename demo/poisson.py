@@ -1,3 +1,4 @@
+import argparse
 import dolfinx
 import customquad
 import ufl
@@ -5,7 +6,6 @@ from ufl import grad, inner, dot, jump, avg
 from mpi4py import MPI
 import numpy as np
 from petsc4py import PETSc
-import argparse
 import algoim_utils
 
 # Setup arguments
@@ -319,12 +319,10 @@ print("uh in range", uh_vals.min(), uh_vals.max())
 
 if gdim == 2:
     # Save coordinates and solution for plotting
-    axis = "axis tight; grid on; xlabel x; ylabel y;"
     filename = "output/uu" + str(args.N) + ".txt"
     uu = pts
     uu[:, 2] = uh_vals
     np.savetxt(filename, uu)
-    print(f"uu=load('{filename}'); plot3(uu(:,1),uu(:,2),uu(:,3),'.');{axis}")
 
     # Save xy and error for plotting
     err = pts
@@ -332,7 +330,6 @@ if gdim == 2:
     err[:, 2] = abs(u_exact(np)(xy) - uh_vals)
     filename = "output/err" + str(args.N) + ".txt"
     np.savetxt(filename, err)
-    print(f"err=load('{filename}'); plot3(err(:,1),err(:,2),err(:,3),'.');{axis}")
 
 # Print
 h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
