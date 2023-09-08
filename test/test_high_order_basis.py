@@ -73,16 +73,32 @@ def test_edges():
     N = 1
     polynomial_order = 1
 
-    xmin = np.array([0.0, 0.0])
-    xmax = np.array([1.0, 1.0])
-    cell_type = dolfinx.mesh.CellType.quadrilateral
-    mesh1 = dolfinx.mesh.create_rectangle(
-        MPI.COMM_WORLD, np.array([xmin, xmax]), np.array([N, N]), cell_type=cell_type
-    )
+    # xmin = np.array([0.0, 0.0])
+    # xmax = np.array([1.0, 1.0])
+    # cell_type = dolfinx.mesh.CellType.quadrilateral
+    # mesh1 = dolfinx.mesh.create_rectangle(
+    #     MPI.COMM_WORLD, np.array([xmin, xmax]), np.array([N, N]), cell_type=cell_type
+    # )
 
-    mesh2 = create_high_order_quad_mesh(N, N, polynomial_order)
+    # mesh2 = create_high_order_quad_mesh(N, N, polynomial_order)
 
-    mesh = mesh2
+    # for m in (mesh1, mesh2):
+    #     g = m.geometry
+    #     print(g.x)
+    #     print(g.cmap.variant)
+    #     print(g.dofmap)
+    #     print(g.input_global_indices)
+    # for m in (mesh1, mesh2):
+    #     t = m.topology
+    #     t.create_connectivity(t.dim, 0)
+    #     print(t.connectivity(t.dim, 0))
+
+    infile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, f"quad_P{polynomial_order}.xdmf", "r")
+    mesh3 = infile.read_mesh(name="Grid")
+
+    breakpoint()
+
+    mesh = mesh3
 
     tdim = mesh.topology.dim
     xmin = np.min(mesh.geometry.x, axis=0)[0:tdim]
