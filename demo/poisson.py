@@ -98,9 +98,6 @@ t = dolfinx.common.Timer()
     xyz_bdry,
 ] = algoim_utils.generate_qr(mesh, NN, degree, args.domain, algoim_opts)
 
-if args.verbose:
-    print(f"drawgrid([{xmin}],[{xmax}],[{NN}],gcf);")
-
 print("Generating qr took", t.elapsed()[0])
 print("num cells", customquad.utils.get_num_cells(mesh))
 print("num cut_cells", len(cut_cells))
