@@ -1,2 +1,6 @@
 .cache/
 build/
+.parallel/
+.ipython/
+demo/output/
+customquad.egg-info/
