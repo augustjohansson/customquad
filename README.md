@@ -56,7 +56,7 @@ most challenging part. I have the following setup:
 git clone git@github.com:augustjohansson/customquad.git
 cd customquad
 git clone -b august/2023cq git@github.com:augustjohansson/ffcx-custom.git
-git clone git+https://github.com/augustjohansson/ufl-custom.git
+git clone git@github.com:augustjohansson/ufl-custom.git
 git config --global --add safe.directory /root/ffcx-custom
 ```
 Then I start the container and use the `install-all` alias in the
