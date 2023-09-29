@@ -44,11 +44,22 @@ def get_dofs(V):
 
     """
     num_cells = get_num_cells(V.mesh)
-    num_loc_dofs = V.dofmap.dof_layout.num_dofs
-    try:
-        dofs = V.dofmap.list().array.reshape(num_cells, num_loc_dofs)
-    except:
-        dofs = V.dofmap.list.array.reshape(num_cells, num_loc_dofs)
+    bs = V.dofmap.index_map_bs
+    num_loc_dofs = V.dofmap.dof_layout.num_dofs * bs
+
+    if bs == 1:
+        try:
+            dofs = V.dofmap.list().array.reshape(num_cells, num_loc_dofs)
+        except:
+            dofs = V.dofmap.list.array.reshape(num_cells, num_loc_dofs)
+    else:
+        dofs = np.ndarray((num_cells, num_loc_dofs), np.int32)
+        # r = np.arange(num_loc_dofs)
+        # FIXME vectorize
+        for cell in range(num_cells):
+            for i, dof in enumerate(V.dofmap.cell_dofs(cell)):
+                for j in range(bs):
+                    dofs[cell, i * bs + j] = dof * bs + j
     return dofs, num_loc_dofs
 
 
