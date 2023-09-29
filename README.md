@@ -55,7 +55,7 @@ most challenging part. I have the following setup:
 ```
 git clone git@github.com:augustjohansson/customquad.git
 cd customquad
-git clone -b august/2023cq git@github.com:augustjohansson/ffcx-custom.git
+git clone git@github.com:augustjohansson/ffcx-custom.git
 git clone git@github.com:augustjohansson/ufl-custom.git
 git config --global --add safe.directory /root/ffcx-custom
 ```
