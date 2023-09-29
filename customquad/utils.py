@@ -73,15 +73,12 @@ def get_vertices(mesh):
 
 def get_inactive_dofs(V, cut_cells, uncut_cells):
     dofs, _ = get_dofs(V)
-    num_vertices = get_num_nodes(V.mesh)
-    assert num_vertices == dofs.max() + 1  # P1 elements
-    all_dofs = np.arange(0, num_vertices)
+    num_dofs = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    all_dofs = np.arange(num_dofs)
     for cells in [cut_cells, uncut_cells]:
         for cell in cells:
-            cell_dofs = V.dofmap.cell_dofs(cell)
-            all_dofs[cell_dofs] = -1
-    inactive_dofs = np.arange(0, num_vertices, dtype="int32")[all_dofs > -1]
-
+            all_dofs[dofs[cell, :]] = -1
+    inactive_dofs = np.arange(num_dofs, dtype=np.int32)[all_dofs > -1]
     return inactive_dofs
 
 
@@ -103,7 +100,7 @@ def lock_inactive_dofs(inactive_dofs, A):
         for i in zeros[0]:
             A.setValue(i, i, 1.0)
         A.assemble()
-        RuntimeError("Zeros on the diagonal should not happen")
+        raise RuntimeError("Zeros on the diagonal should not happen")
 
     return A
 
