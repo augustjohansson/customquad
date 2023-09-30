@@ -33,8 +33,8 @@ def test_quads_assembly(assembler, norm, N, xmin, xmax, fcn):
         np.array(N),
         cell_type,
     )
-
-    b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
+    V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
+    b, b_ref = assembler(V, fiat_element, quadrature_degree, fcn)
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
 
 
@@ -61,8 +61,8 @@ def test_hexes_assembly(assembler, norm, N, xmin, xmax, fcn):
         np.array(N),
         cell_type,
     )
-
-    b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
+    V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
+    b, b_ref = assembler(V, fiat_element, quadrature_degree, fcn)
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
 
 
@@ -168,6 +168,9 @@ def test_edge_integral():
     marker = dolfinx.mesh.meshtags(mesh, tdim - 1, indices, values[pos])
     ds = ufl.Measure("ds", subdomain_data=marker)
     dx = ufl.dx(metadata={"quadrature_rule": "runtime"})
+
+    mesh.topology.create_connectivity(tdim, tdim - 1)
+    c2f = mesh.topology.connectivity(tdim, tdim - 1)
 
     mesh.topology.create_connectivity(tdim - 1, 0)
     f2n = mesh.topology.connectivity(tdim - 1, 0)
@@ -331,3 +334,50 @@ def test_face_integral():
 
         for m, v in enumerate(b.array):
             assert abs(v - b_exact.array[m]) < 1e-10
+
+
+def test_corners():
+    # Is the numbering of the basis functions same as the numbering of
+    # mesh.geometry.x?
+
+    N = 1
+    cell_type = dolfinx.mesh.CellType.quadrilateral
+    xmin = np.array([-0.25, -10.25])
+    xmax = np.array([1.25, 17.5])
+    mesh = dolfinx.mesh.create_rectangle(
+        MPI.COMM_WORLD, np.array([xmin, xmax]), np.array([N, N]), cell_type=cell_type
+    )
+    # mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, N, N, cell_type)
+
+    tdim = mesh.topology.dim
+    num_cells = cq.utils.get_num_cells(mesh)
+    cells = np.arange(num_cells)
+
+    V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
+    v = ufl.TestFunction(V)
+    integrand = 1 * v
+    dx = ufl.dx(metadata={"quadrature_rule": "runtime"})
+    L = dolfinx.fem.form(integrand * dx)
+
+    mesh.topology.create_connectivity(tdim, 0)
+    c2n = mesh.topology.connectivity(tdim, 0)
+
+    xdiff = xmax - xmin
+    area = np.prod(xdiff)
+
+    for k in range(4):
+        node = c2n.array[k]
+        xk = mesh.geometry.x[node, 0:tdim]
+        qr_pts = np.expand_dims((xk - xmin) / xdiff, axis=0)
+        qr_w = np.expand_dims(1.0, axis=(0, 1))
+        qr_data = [(cells, qr_pts, qr_w)]
+        b = cq.assemble_vector(L, qr_data)
+
+        breakpoint()
+
+        assert abs(b[k] - area) < 1e-10
+
+        other = np.setdiff1d([0, 1, 2, 3], [k])
+        assert max(abs(b.array[other])) < 1e-10
+
+        breakpoint()
