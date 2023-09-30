@@ -93,7 +93,7 @@ def generate_qr(mesh, NN, degree, domain, opts=[]):
     """degree specifies the degree of the underlying one-dimensional
     Gaussian quadrature scheme and must satisfy 1 <= qo && qo <= 10.
     """
-    cppyy.add_include_path("/usr/include/algoim/algoim")
+    cppyy.add_include_path("/usr/local/include/algoim/algoim")
     if domain == "square":
         hppfile = "square.hpp"
     elif domain == "circle":

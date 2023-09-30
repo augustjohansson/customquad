@@ -44,11 +44,22 @@ def get_dofs(V):
 
     """
     num_cells = get_num_cells(V.mesh)
-    num_loc_dofs = V.dofmap.dof_layout.num_dofs
-    try:
-        dofs = V.dofmap.list().array.reshape(num_cells, num_loc_dofs)
-    except:
-        dofs = V.dofmap.list.array.reshape(num_cells, num_loc_dofs)
+    bs = V.dofmap.index_map_bs
+    num_loc_dofs = V.dofmap.dof_layout.num_dofs * bs
+
+    if bs == 1:
+        try:
+            dofs = V.dofmap.list().array.reshape(num_cells, num_loc_dofs)
+        except:
+            dofs = V.dofmap.list.array.reshape(num_cells, num_loc_dofs)
+    else:
+        dofs = np.ndarray((num_cells, num_loc_dofs), np.int32)
+        # r = np.arange(num_loc_dofs)
+        # FIXME vectorize
+        for cell in range(num_cells):
+            for i, dof in enumerate(V.dofmap.cell_dofs(cell)):
+                for j in range(bs):
+                    dofs[cell, i * bs + j] = dof * bs + j
     return dofs, num_loc_dofs
 
 
@@ -62,15 +73,12 @@ def get_vertices(mesh):
 
 def get_inactive_dofs(V, cut_cells, uncut_cells):
     dofs, _ = get_dofs(V)
-    num_vertices = get_num_nodes(V.mesh)
-    assert num_vertices == dofs.max() + 1  # P1 elements
-    all_dofs = np.arange(0, num_vertices)
+    num_dofs = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    all_dofs = np.arange(num_dofs)
     for cells in [cut_cells, uncut_cells]:
         for cell in cells:
-            cell_dofs = V.dofmap.cell_dofs(cell)
-            all_dofs[cell_dofs] = -1
-    inactive_dofs = np.arange(0, num_vertices, dtype="int32")[all_dofs > -1]
-
+            all_dofs[dofs[cell, :]] = -1
+    inactive_dofs = np.arange(num_dofs, dtype=np.int32)[all_dofs > -1]
     return inactive_dofs
 
 
@@ -92,7 +100,7 @@ def lock_inactive_dofs(inactive_dofs, A):
         for i in zeros[0]:
             A.setValue(i, i, 1.0)
         A.assemble()
-        RuntimeError("Zeros on the diagonal should not happen")
+        raise RuntimeError("Zeros on the diagonal should not happen")
 
     return A
 

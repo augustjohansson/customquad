@@ -2,7 +2,7 @@ import argparse
 import dolfinx
 import customquad
 import ufl
-from ufl import grad, inner, dot, jump, avg
+from ufl import grad, inner, dot, jump, avg, curl
 from mpi4py import MPI
 import numpy as np
 from petsc4py import PETSc
@@ -145,7 +145,6 @@ form1 = dolfinx.fem.form(a_bulk * dx_cut)
 form2 = dolfinx.fem.form(a_bdry * ds_cut(cut_cell_tag))
 
 t = dolfinx.common.Timer()
-breakpoint()
 Ac1 = customquad.assemble_matrix(form1, qr_bulk)
 Ac1.assemble()
 print("Runtime assemble bulk took", t.elapsed()[0])
@@ -210,3 +209,22 @@ uh.name = "uh"
 write("output/vector_poisson" + str(args.N) + ".xdmf", mesh, uh)
 assert np.isfinite(vec.array).all()
 assert np.isfinite(uh.vector.array).all()
+
+
+def project(f, mesh):
+    V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
+    u = ufl.TrialFunction(V)
+    v = ufl.TestFunction(V)
+    a = ufl.inner(u, v) * ufl.dx
+    L = ufl.inner(f, v) * ufl.dx
+    problem = dolfinx.fem.petsc.LinearProblem(
+        a, L, petsc_options={"ksp_type": "preonly", "pc_type": "lu"}
+    )
+    pf = problem.solve()
+    return pf
+
+
+B = project(curl(uh), mesh)
+
+write("output/std_vector_poisson" + str(args.N) + ".xdmf", mesh, uh)
+write("output/B" + str(args.N) + ".xdmf", mesh, B)
