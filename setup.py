@@ -13,7 +13,7 @@ class PostInstall(install):
         install.run(self)
         print("Copy file")
         hfile = "./customquad/call_basix.h"
-        target = "/usr/include"
+        target = "/usr/local/include"
         shutil.copy(hfile, target)
 
 
