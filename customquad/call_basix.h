@@ -47,7 +47,7 @@ void call_basix(double***** FE,
 
   // Allocate
   *FE = new double***[1];
-  for (int i = 0; i < 1; ++i)    {
+  for (int i = 0; i < 1; ++i) {
     (*FE)[i] = new double**[1];
     for (int j = 0; j < 1; ++j)	{
       (*FE)[i][j] = new double*[num_quadrature_points];

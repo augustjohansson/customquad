@@ -15,6 +15,7 @@ parser.add_argument("-algoim", action="store_true")
 parser.add_argument("-betaN", type=float, default=10.0)
 parser.add_argument("-betas", type=float, default=1.0)
 parser.add_argument("-domain", type=str, default="circle")
+parser.add_argument("-degree", type=int, default=1)
 parser.add_argument("-verbose", action="store_true")
 args = parser.parse_args()
 print("arguments:")
@@ -48,7 +49,6 @@ mesh = dolfinx.mesh.create_rectangle(
 
 # QR
 algoim_opts = {"verbose": args.verbose}
-degree = 1
 [
     cut_cells,
     uncut_cells,
@@ -60,7 +60,7 @@ degree = 1
     qr_n0,
     xyz,
     xyz_bdry,
-] = algoim_utils.generate_qr(mesh, NN, degree, args.domain, algoim_opts)
+] = algoim_utils.generate_qr(mesh, NN, args.degree, args.domain, algoim_opts)
 
 # Algoim creates (at the moment) quadrature rules for _all_ cells, not
 # only the cut cells. Remove these empty entries
@@ -98,21 +98,58 @@ v = ufl.TestFunction(V)
 x = ufl.SpatialCoordinate(mesh)
 n = ufl.FacetNormal(mesh)
 h = ufl.CellDiameter(mesh)
-# fx = dolfinx.fem.Function(V)
-# fx.interpolate(lambda x: 1.0 + 1e-14 * x[0])
-f = ufl.as_vector([1.0, 0.0])
+g = dolfinx.fem.Function(V)
+f = dolfinx.fem.Function(V)
+
+if gdim == 2:
+    # fmt:off
+    # u_expr = lambda x: np.stack((
+    #     x[0]*x[0],
+    #     x[1]*x[1]
+    # ))
+    # u_ufl = ufl.as_vector([
+    #     x[0]*x[0],
+    #     x[1]*x[1]
+    # ])
+    # f_expr = lambda x: np.stack((
+    #     -2*np.ones(x.shape[1]),
+    #     -2*np.ones(x.shape[1])
+    # ))
+    # f_ufl = ufl.as_vector([
+    #     -2,
+    #     -2
+    # ])
+
+    u_ufl  = ufl.as_vector([x[0], x[1]])
+    u_expr = lambda x: np.stack((x[0], x[1]))
+    f_ufl = ufl.as_vector([1e-15, 1e-15])
+
+    # fmt:on
+
+# g.interpolate(u_expr)
+# f.interpolate(f_expr)
+g = u_ufl
+f = f_ufl
 
 
 # PDE
 betaN = args.betaN
 betas = args.betas
+
 a_bulk = inner(grad(u), grad(v))
 L_bulk = inner(f, v)
+
 a_bdry = (
     -inner(dot(n, grad(u)), v) - inner(u, dot(n, grad(v))) + inner(betaN / h * u, v)
 )
-# L_bdry = -inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
+L_bdry = -inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
+# L_bdry = (
+#     -inner(dot(n, grad(g)), v) - inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
+# )
+
 a_stab = betas * avg(h) * inner(jump(n, grad(u)), jump(n, grad(v)))
+# a_stab = inner(betas / avg(h) * jump(n, u), jump(n, v))
+# a_stab = inner(betas / avg(h) * jump(u), jump(v))
 
 # Standard measures
 dx_uncut = ufl.dx(subdomain_data=celltags, domain=mesh)
@@ -160,14 +197,16 @@ A += Ac1
 A += Ac2
 print("Matrix += took", t.elapsed()[0])
 
+breakpoint()
 L1 = dolfinx.fem.form(L_bulk * dx_cut)
 bc1 = customquad.assemble_vector(L1, qr_bulk)
 b = bx
 b += bc1
 
-# L2 = dolfinx.fem.form(L_bdry * ds_cut)
-# bc2 = customquad.assemble_vector(L2, qr_bdry)
-# b += bc2
+L2 = dolfinx.fem.form(L_bdry * ds_cut)
+bc2 = customquad.assemble_vector(L2, qr_bdry)
+b += bc2
+breakpoint()
 
 assert np.isfinite(b.array).all()
 assert np.isfinite(A.norm())
@@ -211,6 +250,23 @@ assert np.isfinite(vec.array).all()
 assert np.isfinite(uh.vector.array).all()
 
 
+def assemble(integrand):
+    m_cut = customquad.assemble_scalar(dolfinx.fem.form(integrand * dx_cut), qr_bulk)
+    m_uncut = dolfinx.fem.assemble_scalar(
+        dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
+    )
+    return m_cut + m_uncut
+
+
+# L2 errors: beware of cancellation
+L2_integrand = (uh - u_ufl) ** 2
+L2_err = np.sqrt(assemble(L2_integrand))
+
+# H10 errors
+H10_integrand = (grad(uh) - grad(u_ufl)) ** 2
+H10_err = np.sqrt(assemble(H10_integrand))
+
+
 def project(f, mesh):
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
     u = ufl.TrialFunction(V)
@@ -225,6 +281,67 @@ def project(f, mesh):
 
 
 B = project(curl(uh), mesh)
-
-write("output/std_vector_poisson" + str(args.N) + ".xdmf", mesh, uh)
 write("output/B" + str(args.N) + ".xdmf", mesh, B)
+
+# Evaluate solution in qr to see that there aren't any spikes
+bb_tree = dolfinx.geometry.BoundingBoxTree(mesh, gdim)
+flatten = lambda l: [item for sublist in l for item in sublist]
+pts = np.reshape(flatten(xyz), (-1, gdim))
+pts_bdry = np.reshape(flatten(xyz_bdry), (-1, gdim))
+pts_midpt = dolfinx.mesh.compute_midpoints(mesh, gdim, uncut_cells)
+pts = np.append(pts, pts_bdry, axis=0)
+pts = np.append(pts, pts_midpt[:, 0:gdim], axis=0)
+if gdim == 2:
+    # Pad with zero column
+    pts = np.hstack((pts, np.zeros((pts.shape[0], 1))))
+
+cell_candidates = dolfinx.cpp.geometry.compute_collisions(bb_tree, pts)
+cells = dolfinx.cpp.geometry.compute_colliding_cells(mesh, cell_candidates, pts)
+uh_vals = uh.eval(pts, cells.array)
+uh_x = uh_vals[:, 0]
+uh_y = uh_vals[:, 1]
+print("uh in range", min(uh_x), max(uh_x), min(uh_y), max(uh_y))
+
+if gdim == 2:
+    # Save coordinates and solution for plotting
+    filename = "output/uu" + str(args.N) + ".txt"
+    uu = np.empty((len(uh_x), 4))
+    uu[:, 0:2] = pts[:, 0:2]
+    uu[:, 2] = uh_x
+    uu[:, 3] = uh_y
+    np.savetxt(filename, uu)
+
+    # Save xy and error for plotting
+    err = np.empty((len(uh_x), 4))
+    err[:, 0:2] = pts[:, 0:2]
+    xy = [pts[:, 0], pts[:, 1]]
+    zz = u_expr(xy)
+    err[:, 2] = abs(zz[0] - uh_x)
+    err[:, 3] = abs(zz[1] - uh_y)
+    filename = "output/err" + str(args.N) + ".txt"
+    np.savetxt(filename, err)
+
+    uuzz = np.empty((len(uh_x), 4))
+    uuzz[:, 0:2] = pts[:, 0:2]
+    uuzz[:, 2] = zz[0]
+    uuzz[:, 3] = zz[1]
+    filename = "output/uuzz" + str(args.N) + ".txt"
+    np.savetxt(filename, uuzz)
+
+    max_err_x = max(err[:, 2])
+    max_err_y = max(err[:, 3])
+    print("max err x", 1.0 / args.N, max_err_x)
+    print("max err y", 1.0 / args.N, max_err_y)
+    print(1.0 / args.N, max_err_x)
+
+h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
+conv = np.array(
+    [
+        max(h),
+        L2_err,
+        H10_err,
+        max_err_x,
+        max_err_y,
+        args.N,
+    ],
+)
