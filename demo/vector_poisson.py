@@ -35,7 +35,7 @@ def write(filename, mesh, data):
         elif isinstance(data, dolfinx.fem.Function):
             xdmffile.write_function(data)
         else:
-            breakpoint()
+            raise RuntimeError("Cannot write this datatype")
 
 
 # Mesh
