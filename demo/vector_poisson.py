@@ -139,16 +139,32 @@ betas = args.betas
 a_bulk = inner(grad(u), grad(v))
 L_bulk = inner(f, v)
 
+# Standard
 a_bdry = (
     -inner(dot(n, grad(u)), v) - inner(u, dot(n, grad(v))) + inner(betaN / h * u, v)
 )
 L_bdry = -inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
+
 # L_bdry = (
 #     -inner(dot(n, grad(g)), v) - inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
 # )
 
-a_stab = betas * avg(h) * inner(jump(n, grad(u)), jump(n, grad(v)))
+# Flip (a,b) to (b,a)
+# a_bdry = (
+#     -inner(dot(grad(u), n), v) - inner(u, dot(grad(v), n)) + inner(betaN / h * u, v)
+# )
+# L_bdry = -inner(g, dot(grad(v), n)) + inner(betaN / h * g, v)
+
+# # Nonsymm should not require stabilization (check Burman paper)
+# a_bdry = -inner(dot(grad(u), n), v) + inner(u, dot(grad(v), n))
+# L_bdry = inner(g, dot(grad(v), n))
+
+# Stabilization
+# TODO: check tensor product
+# a_stab = betas * avg(h) * inner(jump(n, grad(u)), jump(n, grad(v)))
+a_stab = betas * avg(h) * inner(jump(grad(u), n), jump(grad(v), n))
 # a_stab = inner(betas / avg(h) * jump(n, u), jump(n, v))
+# a_stab = inner(betas / avg(h) * jump(dot(n, u)), jump(dot(n, v)))
 # a_stab = inner(betas / avg(h) * jump(u), jump(v))
 
 # Standard measures
