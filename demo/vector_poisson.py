@@ -12,7 +12,7 @@ import algoim_utils
 parser = argparse.ArgumentParser()
 parser.add_argument("-N", type=int, default=16)
 parser.add_argument("-algoim", action="store_true")
-parser.add_argument("-betaN", type=float, default=10.0)
+parser.add_argument("-betaN", type=float, default=20.0)  # NB!
 parser.add_argument("-betas", type=float, default=1.0)
 parser.add_argument("-domain", type=str, default="circle")
 parser.add_argument("-degree", type=int, default=1)
