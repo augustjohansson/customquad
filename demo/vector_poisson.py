@@ -120,9 +120,26 @@ if gdim == 2:
     #     -2
     # ])
 
-    u_ufl  = ufl.as_vector([x[0], x[1]])
-    u_expr = lambda x: np.stack((x[0], x[1]))
-    f_ufl = ufl.as_vector([1e-15, 1e-15])
+    # u_ufl  = ufl.as_vector([x[0], x[1]])
+    # u_expr = lambda x: np.stack((x[0], x[1]))
+    # f_ufl = ufl.as_vector([1e-15, 1e-15])
+
+    # u_ufl  = ufl.as_vector([2*x[0], x[1]])
+    # u_expr = lambda x: np.stack((2*x[0], x[1]))
+    # f_ufl = ufl.as_vector([1e-15, 1e-15])
+
+    u_ufl = ufl.as_vector([
+        ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
+        0
+    ])
+    u_expr = lambda x: np.stack((
+        np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]),
+        x[0]*0
+    ))
+    f_ufl = ufl.as_vector([
+        2*ufl.pi*ufl.pi * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
+        0
+    ])
 
     # fmt:on
 
