@@ -213,7 +213,6 @@ A += Ac1
 A += Ac2
 print("Matrix += took", t.elapsed()[0])
 
-breakpoint()
 L1 = dolfinx.fem.form(L_bulk * dx_cut)
 bc1 = customquad.assemble_vector(L1, qr_bulk)
 b = bx
@@ -222,7 +221,6 @@ b += bc1
 L2 = dolfinx.fem.form(L_bdry * ds_cut)
 bc2 = customquad.assemble_vector(L2, qr_bdry)
 b += bc2
-breakpoint()
 
 assert np.isfinite(b.array).all()
 assert np.isfinite(A.norm())
@@ -316,7 +314,8 @@ cells = dolfinx.cpp.geometry.compute_colliding_cells(mesh, cell_candidates, pts)
 uh_vals = uh.eval(pts, cells.array)
 uh_x = uh_vals[:, 0]
 uh_y = uh_vals[:, 1]
-print("uh in range", min(uh_x), max(uh_x), min(uh_y), max(uh_y))
+print("uh_x in range", min(uh_x), max(uh_x))
+print("uh_y in range", min(uh_y), max(uh_y))
 
 if gdim == 2:
     # Save coordinates and solution for plotting
@@ -361,3 +360,7 @@ conv = np.array(
         args.N,
     ],
 )
+
+# breakpoint()
+print(conv)
+np.savetxt("output/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
