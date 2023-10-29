@@ -95,11 +95,11 @@ def generate_qr(mesh, NN, degree, domain, opts=[]):
     """
     cppyy.add_include_path("/usr/include/algoim/algoim")
     if domain == "square":
-        hppfile = "square.hpp"
+        hppfile = "demo/square.hpp"
     elif domain == "circle":
-        hppfile = "circle.hpp"
+        hppfile = "demo/circle.hpp"
     elif domain == "sphere":
-        hppfile = "sphere.hpp"
+        hppfile = "demo/sphere.hpp"
     else:
         RuntimeError("unknown domain", domain)
 
