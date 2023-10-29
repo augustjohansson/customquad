@@ -10,7 +10,7 @@ import algoim_utils
 
 # Setup arguments
 parser = argparse.ArgumentParser()
-parser.add_argument("-N", type=int, default=128)
+parser.add_argument("-N", type=int, default=16)
 parser.add_argument("-algoim", action="store_true")
 parser.add_argument("-betaN", type=float, default=10.0)
 parser.add_argument("-betas", type=float, default=1.0)
