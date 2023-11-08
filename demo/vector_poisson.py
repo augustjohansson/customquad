@@ -2,7 +2,7 @@ import argparse
 import dolfinx
 import customquad
 import ufl
-from ufl import grad, inner, dot, jump, avg, curl
+from ufl import nabla_grad, inner, dot, jump, avg
 from mpi4py import MPI
 import numpy as np
 from petsc4py import PETSc
@@ -98,21 +98,33 @@ v = ufl.TestFunction(V)
 x = ufl.SpatialCoordinate(mesh)
 n = ufl.FacetNormal(mesh)
 h = ufl.CellDiameter(mesh)
-# fx = dolfinx.fem.Function(V)
-# fx.interpolate(lambda x: 1.0 + 1e-14 * x[0])
-f = ufl.as_vector([1.0, 0.0])
 
+u_ufl = ufl.as_vector([
+    ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
+    x[0]*0
+])
+u_expr = lambda x: np.stack((
+    np.sin(np.pi * x[0]) * np.sin(np.pi * x[1]),
+    x[0]*0
+))
+f_ufl = ufl.as_vector([
+    2 * ufl.pi * ufl.pi * ufl.sin(ufl.pi * x[0]) * ufl.sin(ufl.pi * x[1]),
+    0
+])
+
+g = u_ufl
+f = f_ufl
 
 # PDE
 betaN = args.betaN
 betas = args.betas
-a_bulk = inner(grad(u), grad(v))
+a_bulk = inner(nabla_grad(u), nabla_grad(v))
 L_bulk = inner(f, v)
 a_bdry = (
-    -inner(dot(n, grad(u)), v) - inner(u, dot(n, grad(v))) + inner(betaN / h * u, v)
+    -inner(dot(n, nabla_grad(u)), v) - inner(u, dot(n, nabla_grad(v))) + inner(betaN / h * u, v)
 )
-# L_bdry = -inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
-a_stab = betas * avg(h) * inner(jump(n, grad(u)), jump(n, grad(v)))
+L_bdry = -inner(g, dot(n, nabla_grad(v))) + inner(betaN / h * g, v)
+a_stab = betas * avg(h) * inner(jump(n, nabla_grad(u)), jump(n, nabla_grad(v)))
 
 # Standard measures
 dx_uncut = ufl.dx(subdomain_data=celltags, domain=mesh)
@@ -165,9 +177,9 @@ bc1 = customquad.assemble_vector(L1, qr_bulk)
 b = bx
 b += bc1
 
-# L2 = dolfinx.fem.form(L_bdry * ds_cut)
-# bc2 = customquad.assemble_vector(L2, qr_bdry)
-# b += bc2
+L2 = dolfinx.fem.form(L_bdry * ds_cut)
+bc2 = customquad.assemble_vector(L2, qr_bdry)
+b += bc2
 
 assert np.isfinite(b.array).all()
 assert np.isfinite(A.norm())
@@ -210,21 +222,22 @@ write("output/vector_poisson" + str(args.N) + ".xdmf", mesh, uh)
 assert np.isfinite(vec.array).all()
 assert np.isfinite(uh.vector.array).all()
 
-
-def project(f, mesh):
-    V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    a = ufl.inner(u, v) * ufl.dx
-    L = ufl.inner(f, v) * ufl.dx
-    problem = dolfinx.fem.petsc.LinearProblem(
-        a, L, petsc_options={"ksp_type": "preonly", "pc_type": "lu"}
+def assemble(integrand):
+    m_cut = customquad.assemble_scalar(dolfinx.fem.form(integrand * dx_cut), qr_bulk)
+    m_uncut = dolfinx.fem.assemble_scalar(
+        dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
     )
-    pf = problem.solve()
-    return pf
+    return m_cut + m_uncut
 
 
-B = project(curl(uh), mesh)
+# L2 errors: beware of cancellation
+L2_integrand = (uh - u_ufl) ** 2
+L2_err = np.sqrt(assemble(L2_integrand))
+
+# H10 errors
+H10_integrand = (nabla_grad(uh) - nabla_grad(u_ufl)) ** 2
+H10_err = np.sqrt(assemble(H10_integrand))
 
 write("output/std_vector_poisson" + str(args.N) + ".xdmf", mesh, uh)
-write("output/B" + str(args.N) + ".xdmf", mesh, B)
+h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
+print(max(h), L2_err, H10_err)
