@@ -15,6 +15,8 @@ parser.add_argument("-algoim", action="store_true")
 parser.add_argument("-betaN", type=float, default=10.0)
 parser.add_argument("-betas", type=float, default=1.0)
 parser.add_argument("-domain", type=str, default="circle")
+parser.add_argument("-p", type=int, default=1)
+parser.add_argument("-order", type=int, default=1)
 parser.add_argument("-verbose", action="store_true")
 args = parser.parse_args()
 print("arguments:")
@@ -41,22 +43,33 @@ def write(filename, mesh, data):
 if args.domain == "circle":
     xmin = np.array([-1.11, -1.51])
     xmax = np.array([1.55, 1.22])
-    L2_exact = 0.968018182052052
     volume_exact = np.pi
     area_exact = 2 * np.pi
 
 elif args.domain == "sphere":
     xmin = np.array([-1.11, -1.51, -1.23])
     xmax = np.array([1.55, 1.22, 1.11])
-    L2_exact = 0.835076026647649
     volume_exact = 4 * np.pi / 3
     area_exact = 4 * np.pi
 
 else:
     RuntimeError("Unknown domain", args.domain)
 
-# Mesh
 gdim = len(xmin)
+
+
+def u_exact(backend):
+    if gdim == 2:
+        return lambda x: backend.sin(backend.pi * x[0]) * backend.sin(backend.pi * x[1])
+    else:
+        return (
+            lambda x: backend.sin(backend.pi * x[0])
+            * backend.sin(backend.pi * x[1])
+            * backend.sin(backend.pi * x[2])
+        )
+
+
+# Mesh
 NN = np.array([args.N] * gdim, dtype=np.int32)
 if gdim == 2:
     cell_type = dolfinx.mesh.CellType.quadrilateral
@@ -71,7 +84,6 @@ mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
 assert mesh.geometry.dim == gdim
 
 # Generate qr
-degree = 1
 algoim_opts = {"verbose": args.verbose}
 t = dolfinx.common.Timer()
 [
@@ -85,10 +97,7 @@ t = dolfinx.common.Timer()
     qr_n0,
     xyz,
     xyz_bdry,
-] = algoim_utils.generate_qr(mesh, NN, degree, args.domain, algoim_opts)
-
-if args.verbose:
-    print(f"drawgrid([{xmin}],[{xmax}],[{NN}],gcf);")
+] = algoim_utils.generate_qr(mesh, NN, args.order, args.domain, algoim_opts)
 
 print("Generating qr took", t.elapsed()[0])
 print("num cells", customquad.utils.get_num_cells(mesh))
@@ -126,31 +135,31 @@ facetags = customquad.utils.get_facetags(
 write("output/celltags" + str(args.N) + ".xdmf", mesh, celltags)
 
 # FEM
-V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", 1))
+V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", args.p))
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
-f = dolfinx.fem.Function(V)
 g = dolfinx.fem.Function(V)
 x = ufl.SpatialCoordinate(mesh)
 n = ufl.FacetNormal(mesh)
 h = ufl.CellDiameter(mesh)
 
-
-def exact_solution(x, backend):
-    u_tmp = backend.sin(backend.pi * x[0])
-    for d in range(1, gdim):
-        u_tmp *= backend.sin(backend.pi * x[d])
-    return u_tmp
-
+"""
+debug
+"""
+dofcoords = V.tabulate_dof_coordinates()
+dofs, _ = customquad.utils.get_dofs(V)
+np.savetxt("dofcoords.txt", dofcoords)
+np.savetxt("dofs.txt", dofs)
+breakpoint()
 
 # Setup boundary traction and rhs
-g.interpolate(lambda x: exact_solution(x, np))
-f = -ufl.div(ufl.grad(exact_solution(x, ufl)))
+g.interpolate(u_exact(np))
+f = -ufl.div(ufl.grad(u_exact(ufl)(x)))
 # g.interpolate(lambda x: 0.0 + 1e-14 * x[0])
 # f.interpolate(lambda x: 1.0 + 1e-14 * x[0])
 
 # PDE
-betaN = args.betaN
+betaN = args.betaN * args.p**2
 betas = args.betas
 a_bulk = inner(grad(u), grad(v))
 L_bulk = inner(f, v)
@@ -253,16 +262,12 @@ def ksp_solve(A, b):
     return vec
 
 
-def vec_to_function(vec, V, tag="fcn"):
-    uh = dolfinx.fem.Function(V)
-    uh.vector.setArray(vec.array)
-    uh.name = tag
-    return uh
-
-
 # Solve
 vec = ksp_solve(A, b)
-uh = vec_to_function(vec, V, "uh")
+uh = dolfinx.fem.Function(V)
+uh.vector.setArray(vec.array)
+uh.name = "uh"
+
 write("output/poisson" + str(args.N) + ".xdmf", mesh, uh)
 assert np.isfinite(vec.array).all()
 assert np.isfinite(uh.vector.array).all()
@@ -276,10 +281,13 @@ def assemble(integrand):
     return m_cut + m_uncut
 
 
-# L2 errors
-L2_integrand = inner(uh, uh)
-L2_val = np.sqrt(assemble(L2_integrand))
-L2_err = abs(L2_val - L2_exact) / L2_exact
+# L2 errors: beware of cancellation
+L2_integrand = (uh - u_exact(ufl)(x)) ** 2
+L2_err = np.sqrt(assemble(L2_integrand))
+
+# H10 errors
+H10_integrand = (grad(uh) - grad(u_exact(ufl)(x))) ** 2
+H10_err = np.sqrt(assemble(H10_integrand))
 
 # Check functional assembly
 area_func = customquad.assemble_scalar(
@@ -318,25 +326,31 @@ print("uh in range", uh_vals.min(), uh_vals.max())
 
 if gdim == 2:
     # Save coordinates and solution for plotting
-    axis = "axis tight; grid on; xlabel x; ylabel y;"
     filename = "output/uu" + str(args.N) + ".txt"
     uu = pts
     uu[:, 2] = uh_vals
     np.savetxt(filename, uu)
-    print(f"uu=load('{filename}'); plot3(uu(:,1),uu(:,2),uu(:,3),'.');{axis}")
 
     # Save xy and error for plotting
     err = pts
     xy = [pts[:, 0], pts[:, 1]]
-    err[:, 2] = abs(exact_solution(xy, np) - uh_vals)
+    err[:, 2] = abs(u_exact(np)(xy) - uh_vals)
     filename = "output/err" + str(args.N) + ".txt"
     np.savetxt(filename, err)
-    print(f"err=load('{filename}'); plot3(err(:,1),err(:,2),err(:,3),'.');{axis}")
 
 # Print
 h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
 conv = np.array(
-    [max(h), L2_val, L2_err, volume, volume_err, area, area_err, args.N],
+    [
+        max(h),
+        L2_err,
+        H10_err,
+        volume,
+        volume_err,
+        area,
+        area_err,
+        args.N,
+    ],
 )
 
 print(conv)
