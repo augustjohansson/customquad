@@ -99,7 +99,8 @@ NN = np.array([args.N] * gdim, dtype=np.int32)
 # mesh_generator = dolfinx.mesh.create_rectangle
 # mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
 
-mesh = cq.create_high_order_quad_mesh(np.array([xmin, xmax]), NN, args.p, True)
+debug = False
+mesh = cq.create_high_order_quad_mesh(np.array([xmin, xmax]), NN, args.p, debug)
 
 # breakpoint()
 
