@@ -21,7 +21,7 @@ void call_basix(double***** FE,
                 int /* lattice_type */,
                 int gdim)
 {
-  
+
   // Create the lagrange element
   basix::FiniteElement lagrange = basix::create_element(basix::element::family(family),
 							basix::cell::type(cell_type),
@@ -57,36 +57,18 @@ void call_basix(double***** FE,
 
   // Permutation vector
   std::vector<int> perm(num_basis_functions);
-  if (cell_type == 4) {    
-    // Quad
-    if (degree == 1) {
-      perm[0] = 0;
-      perm[1] = 2;
-      perm[2] = 1;
-      perm[3] = 3;
-    }
-    else {
-      for (int i = 0; i < num_basis_functions; ++i)
-	perm[i] = i;
-    }
-  }
-  else if (cell_type == 5) {
-    // Hex
-    if (degree == 1)
-      perm = {0,1,2,3,4,5,6,7};
-    else if (degree == 2)
-      perm = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26};
-  }
-  
+  for (int i = 0; i < num_basis_functions; ++i)
+    perm[i] = i;
+
   assert(perm.size() == num_basis_functions);
 
-  // Copy with permutation  
+  // Copy with permutation
   for (int i = 0; i < num_quadrature_points; ++i)
-    for (int j = 0; j < num_basis_functions; ++j) 
+    for (int j = 0; j < num_basis_functions; ++j)
       (*FE)[0][0][i][j] = tab(basix_derivative, i, perm[j], 0);
 
   bool debug_output = true;
-  
+
   if (debug_output) {
     std::ofstream f;
     std::stringstream ss;
@@ -99,15 +81,15 @@ void call_basix(double***** FE,
       << "\ncell_type " << cell_type
       << "\ndegree " << degree
       << "\ngdim " << gdim
-      << "\nnd " << nd 
+      << "\nnd " << nd
       << "\nnum_basis_functions " << num_basis_functions << '\n';
     f << "tab table copied to FE[0][0][i][j]:\n";
     for (int i = 0; i < num_quadrature_points; ++i)
-      for (int j = 0; j < num_basis_functions; ++j) 
+      for (int j = 0; j < num_basis_functions; ++j)
 	f << i << ' ' << j << ' ' << (*FE)[0][0][i][j] << '\n';
     f << "I.e. the i j matrix looks like\n";
     for (int i = 0; i < num_quadrature_points; ++i) {
-      for (int j = 0; j < num_basis_functions; ++j) 
+      for (int j = 0; j < num_basis_functions; ++j)
 	f << (*FE)[0][0][i][j] << ' ';
       f << '\n';
     }
@@ -134,8 +116,8 @@ void call_basix(double***** FE,
       }
       f << '\n';
     }
-  
+
     f.close();
   }
-  
+
 }
