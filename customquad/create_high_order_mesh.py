@@ -11,7 +11,7 @@ import gmsh
 flatten = lambda l: [item for sublist in l for item in sublist]
 
 
-def create_high_order_quad_mesh(xrange, N, order, debug=False):
+def create_high_order_quad_mesh(xrange, N, degree, debug=False):
     gdim = 2
     gmsh.initialize()
     model_name = "create_high_order_quad_mesh"
@@ -45,12 +45,12 @@ def create_high_order_quad_mesh(xrange, N, order, debug=False):
     gmsh.model.mesh.generate(gdim)
     if debug:
         gmsh.write(model_name + "_" + str(N[0]) + "_" + str(N[1]) + ".mesh")
-    gmsh.model.mesh.setOrder(order)
+    gmsh.model.mesh.setOrder(degree)
 
     # Mesh conversion
     idx, coords, _ = gmsh.model.mesh.getNodes()
     coords = coords.reshape(-1, 3)
-    assert coords.shape[0] == (N[0] + 1) * (N[1] + 1)
+    assert coords.shape[0] == (degree * N[0] + 1) * (degree * N[1] + 1)
     idx -= 1
     srt = np.argsort(idx)
     assert np.all(idx[srt] == np.arange(len(idx)))
@@ -59,7 +59,7 @@ def create_high_order_quad_mesh(xrange, N, order, debug=False):
     (
         name,
         dim,
-        order,
+        degree,
         num_nodes,
         local_coords,
         num_first_order_nodes,
@@ -69,12 +69,13 @@ def create_high_order_quad_mesh(xrange, N, order, debug=False):
     cell_type = dolfinx.mesh.CellType.quadrilateral
     cells = cells[:, dolfinx.io.gmshio.cell_perm_array(cell_type, cells.shape[1])]
 
-    gmsh_cell_id = gmsh.model.mesh.getElementType("quadrangle", order)
+    gmsh_cell_id = gmsh.model.mesh.getElementType("quadrangle", degree)
     mesh = dolfinx.mesh.create_mesh(
         MPI.COMM_WORLD, cells, x, dolfinx.io.gmshio.ufl_mesh(gmsh_cell_id, x.shape[1])
     )
 
     assert mesh.topology.index_map(0).size_local == (N[0] + 1) * (N[1] + 1)
+    assert mesh.geometry.x.shape[0] == (degree * N[0] + 1) * (degree * N[1] + 1)
     assert mesh.topology.index_map(gdim).size_local == N[0] * N[1]
 
     gmsh.finalize()

@@ -90,14 +90,18 @@ NN = np.array([args.N] * gdim, dtype=np.int32)
 #     assert mesh.geometry.dim == gdim
 
 
-cell_type = dolfinx.mesh.CellType.quadrilateral
-mesh_org = dolfinx.mesh.create_rectangle(
-    MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type
-)
+# cell_type = dolfinx.mesh.CellType.quadrilateral
+# mesh_org = dolfinx.mesh.create_rectangle(
+#     MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type
+# )
+
+# cell_type = dolfinx.mesh.CellType.quadrilateral
+# mesh_generator = dolfinx.mesh.create_rectangle
+# mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
 
 mesh = cq.create_high_order_quad_mesh(np.array([xmin, xmax]), NN, args.p, True)
 
-breakpoint()
+# breakpoint()
 
 print(f"{NN=}")
 print(f"{xmin=}")
@@ -181,6 +185,11 @@ if args.p == 1:
     h = ufl.CellDiameter(mesh)
 else:
     h = max((xmax - xmin) / args.N)
+
+# print(V.tabulate_dof_coordinates())
+# dofs, _ = cq.utils.get_dofs(V)
+# print(dofs)
+# breakpoint()
 
 """
 debug
@@ -364,9 +373,9 @@ bb_tree = dolfinx.geometry.BoundingBoxTree(mesh, gdim)
 flatten = lambda l: [item for sublist in l for item in sublist]
 pts = np.reshape(flatten(xyz), (-1, gdim))
 pts_bdry = np.reshape(flatten(xyz_bdry), (-1, gdim))
-pts_midpt = dolfinx.mesh.compute_midpoints(mesh, gdim, uncut_cells)
+pts_bulk = dolfinx.mesh.compute_midpoints(mesh, gdim, uncut_cells)
 pts = np.append(pts, pts_bdry, axis=0)
-pts = np.append(pts, pts_midpt[:, 0:gdim], axis=0)
+pts = np.append(pts, pts_bulk[:, 0:gdim], axis=0)
 if gdim == 2:
     # Pad with zero column
     pts = np.hstack((pts, np.zeros((pts.shape[0], 1))))
