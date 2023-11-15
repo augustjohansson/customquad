@@ -1,5 +1,5 @@
 import dolfinx
-import customquad
+import customquad as cq
 import ufl
 from ufl import grad, inner, dot, jump, avg
 from mpi4py import MPI
@@ -7,6 +7,7 @@ import numpy as np
 from petsc4py import PETSc
 import argparse
 import algoim_utils
+
 
 # Setup arguments
 parser = argparse.ArgumentParser()
@@ -71,17 +72,52 @@ def u_exact(backend):
 
 # Mesh
 NN = np.array([args.N] * gdim, dtype=np.int32)
-if gdim == 2:
-    cell_type = dolfinx.mesh.CellType.quadrilateral
-    mesh_generator = dolfinx.mesh.create_rectangle
-else:
-    cell_type = dolfinx.mesh.CellType.hexahedron
-    mesh_generator = dolfinx.mesh.create_box
+# if args.p == 1:
+#     if gdim == 2:
+#         cell_type = dolfinx.mesh.CellType.quadrilateral
+#         mesh_generator = dolfinx.mesh.create_rectangle
+#     else:
+#         cell_type = dolfinx.mesh.CellType.hexahedron
+#         mesh_generator = dolfinx.mesh.create_box
+#     mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
+#     assert mesh.geometry.dim == gdim
+
+# else:
+#     if gdim == 2:
+#         mesh = cq.create_high_order_quad_mesh(np.array([xmin, xmax]), NN, args.p)
+#     else:
+#         mesh = cq.create_high_order_hex_mesh(np.array([xmin, xmax]), NN, args.p)
+#     assert mesh.geometry.dim == gdim
+
+
+cell_type = dolfinx.mesh.CellType.quadrilateral
+mesh_org = dolfinx.mesh.create_rectangle(
+    MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type
+)
+
+mesh = cq.create_high_order_quad_mesh(np.array([xmin, xmax]), NN, args.p, True)
+
+breakpoint()
+
 print(f"{NN=}")
 print(f"{xmin=}")
 print(f"{xmax=}")
-mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
-assert mesh.geometry.dim == gdim
+
+# V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", args.p))
+# dofs, num_loc_dofs = cq.utils.get_dofs(V)
+# print(dofs.shape)
+# print(args.N * args.N)
+
+# for k in range(dofs.shape[0]):
+#     locdofs = dofs[k, :]
+#     x = mesh.geometry.x[locdofs, 0:gdim]
+#     xmin = np.min(x, axis=0)
+#     xmax = np.max(x, axis=0)
+#     vol = np.prod(xmax - xmin)
+#     print(k, vol)
+
+# breakpoint()
+
 
 # Generate qr
 algoim_opts = {"verbose": args.verbose}
@@ -100,7 +136,7 @@ t = dolfinx.common.Timer()
 ] = algoim_utils.generate_qr(mesh, NN, args.order, args.domain, algoim_opts)
 
 print("Generating qr took", t.elapsed()[0])
-print("num cells", customquad.utils.get_num_cells(mesh))
+print("num cells", cq.utils.get_num_cells(mesh))
 print("num cut_cells", len(cut_cells))
 print("num uncut_cells", len(uncut_cells))
 print("num outside_cells", len(outside_cells))
@@ -118,7 +154,7 @@ uncut_cell_tag = 1
 cut_cell_tag = 2
 outside_cell_tag = 3
 ghost_penalty_tag = 4
-celltags = customquad.utils.get_celltags(
+celltags = cq.utils.get_celltags(
     mesh,
     cut_cells,
     uncut_cells,
@@ -127,7 +163,7 @@ celltags = customquad.utils.get_celltags(
     cut_cell_tag=cut_cell_tag,
     outside_cell_tag=outside_cell_tag,
 )
-facetags = customquad.utils.get_facetags(
+facetags = cq.utils.get_facetags(
     mesh, cut_cells, outside_cells, ghost_penalty_tag=ghost_penalty_tag
 )
 
@@ -141,16 +177,34 @@ v = ufl.TestFunction(V)
 g = dolfinx.fem.Function(V)
 x = ufl.SpatialCoordinate(mesh)
 n = ufl.FacetNormal(mesh)
-h = ufl.CellDiameter(mesh)
+if args.p == 1:
+    h = ufl.CellDiameter(mesh)
+else:
+    h = max((xmax - xmin) / args.N)
 
 """
 debug
 """
 dofcoords = V.tabulate_dof_coordinates()
-dofs, _ = customquad.utils.get_dofs(V)
+dofs, _ = cq.utils.get_dofs(V)
 np.savetxt("dofcoords.txt", dofcoords)
 np.savetxt("dofs.txt", dofs)
-breakpoint()
+
+with open("xyz.txt", "w") as f:
+    for xx in xyz:
+        if len(xx):
+            m = len(xx)
+            np.savetxt(f, xx.reshape((m // 2, -1)))
+with open("xyz_bdry.txt", "w") as f:
+    for xx in xyz_bdry:
+        if len(xx):
+            m = len(xx)
+            np.savetxt(f, xx.reshape((m // 2, -1)))
+
+"""
+
+"""
+
 
 # Setup boundary traction and rhs
 g.interpolate(u_exact(np))
@@ -200,12 +254,12 @@ form1 = dolfinx.fem.form(a_bulk * dx_cut)
 form2 = dolfinx.fem.form(a_bdry * ds_cut(cut_cell_tag))
 
 t = dolfinx.common.Timer()
-Ac1 = customquad.assemble_matrix(form1, qr_bulk)
+Ac1 = cq.assemble_matrix(form1, qr_bulk)
 Ac1.assemble()
 print("Runtime assemble bulk took", t.elapsed()[0])
 
 t = dolfinx.common.Timer()
-Ac2 = customquad.assemble_matrix(form2, qr_bdry)
+Ac2 = cq.assemble_matrix(form2, qr_bdry)
 Ac2.assemble()
 print("Runtime assemble bdry took", t.elapsed()[0])
 
@@ -216,33 +270,33 @@ A += Ac2
 print("Matrix += took", t.elapsed()[0])
 
 L1 = dolfinx.fem.form(L_bulk * dx_cut)
-bc1 = customquad.assemble_vector(L1, qr_bulk)
+bc1 = cq.assemble_vector(L1, qr_bulk)
 b = bx
 b += bc1
 
 L2 = dolfinx.fem.form(L_bdry * ds_cut)
-bc2 = customquad.assemble_vector(L2, qr_bdry)
+bc2 = cq.assemble_vector(L2, qr_bdry)
 b += bc2
 
 if args.verbose:
-    customquad.utils.dump("output/A.txt", A)
-    customquad.utils.dump("output/b.txt", b)
-    customquad.utils.dump("output/bx.txt", bx)
-    customquad.utils.dump("output/bc1.txt", bc1)
-    customquad.utils.dump("output/bc2.txt", bc2)
+    cq.utils.dump("output/A.txt", A)
+    cq.utils.dump("output/b.txt", b)
+    cq.utils.dump("output/bx.txt", bx)
+    cq.utils.dump("output/bc1.txt", bc1)
+    cq.utils.dump("output/bc2.txt", bc2)
 
 assert np.isfinite(b.array).all()
 assert np.isfinite(A.norm())
 
 # Lock inactive dofs
 t = dolfinx.common.Timer()
-inactive_dofs = customquad.utils.get_inactive_dofs(V, cut_cells, uncut_cells)
+inactive_dofs = cq.utils.get_inactive_dofs(V, cut_cells, uncut_cells)
 print("Get inactive_dofs took", t.elapsed()[0])
 t = dolfinx.common.Timer()
-A = customquad.utils.lock_inactive_dofs(inactive_dofs, A)
+A = cq.utils.lock_inactive_dofs(inactive_dofs, A)
 print("Lock inactive dofs took", t.elapsed()[0])
 if args.verbose:
-    customquad.utils.dump("output/A_locked.txt", A)
+    cq.utils.dump("output/A_locked.txt", A)
 assert np.isfinite(A.norm()).all()
 
 
@@ -274,7 +328,7 @@ assert np.isfinite(uh.vector.array).all()
 
 
 def assemble(integrand):
-    m_cut = customquad.assemble_scalar(dolfinx.fem.form(integrand * dx_cut), qr_bulk)
+    m_cut = cq.assemble_scalar(dolfinx.fem.form(integrand * dx_cut), qr_bulk)
     m_uncut = dolfinx.fem.assemble_scalar(
         dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
     )
@@ -290,9 +344,7 @@ H10_integrand = (grad(uh) - grad(u_exact(ufl)(x))) ** 2
 H10_err = np.sqrt(assemble(H10_integrand))
 
 # Check functional assembly
-area_func = customquad.assemble_scalar(
-    dolfinx.fem.form(1.0 * ds_cut(cut_cell_tag)), qr_bdry
-)
+area_func = cq.assemble_scalar(dolfinx.fem.form(1.0 * ds_cut(cut_cell_tag)), qr_bdry)
 volume_func = assemble(1.0)
 ve = abs(volume_exact - volume_func) / volume_exact
 ae = abs(area_exact - area_func) / area_exact
@@ -300,8 +352,8 @@ print("functional volume error", ve)
 print("functional area error", ae)
 
 # Geometry errors
-volume = customquad.utils.volume(xmin, xmax, NN, uncut_cells, qr_w)
-area = customquad.utils.area(xmin, xmax, NN, qr_w_bdry)
+volume = cq.utils.volume(xmin, xmax, NN, uncut_cells, qr_w)
+area = cq.utils.area(xmin, xmax, NN, qr_w_bdry)
 volume_err = abs(volume_exact - volume) / volume_exact
 area_err = abs(area_exact - area) / area_exact
 print("qr volume error", volume_err)

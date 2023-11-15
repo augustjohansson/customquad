@@ -44,11 +44,22 @@ def get_dofs(V):
 
     """
     num_cells = get_num_cells(V.mesh)
-    num_loc_dofs = V.dofmap.dof_layout.num_dofs
-    try:
-        dofs = V.dofmap.list().array.reshape(num_cells, num_loc_dofs)
-    except:
-        dofs = V.dofmap.list.array.reshape(num_cells, num_loc_dofs)
+    bs = V.dofmap.index_map_bs
+    num_loc_dofs = V.dofmap.dof_layout.num_dofs * bs
+
+    if bs == 1:
+        try:
+            dofs = V.dofmap.list().array.reshape(num_cells, num_loc_dofs)
+        except:
+            dofs = V.dofmap.list.array.reshape(num_cells, num_loc_dofs)
+    else:
+        dofs = np.ndarray((num_cells, num_loc_dofs), np.int32)
+        # r = np.arange(num_loc_dofs)
+        # FIXME vectorize
+        for cell in range(num_cells):
+            for i, dof in enumerate(V.dofmap.cell_dofs(cell)):
+                for j in range(bs):
+                    dofs[cell, i * bs + j] = dof * bs + j
     return dofs, num_loc_dofs
 
 
@@ -60,103 +71,14 @@ def get_vertices(mesh):
     return vertices, coords, gdim
 
 
-def check_qr(qr_pts, qr_w, qr_n, cells):
-    if isinstance(qr_pts, list):
-        qr_pts = numba.typed.List(qr_pts)
-    if isinstance(qr_w, list):
-        qr_w = numba.typed.List(qr_w)
-    if isinstance(cells, int):
-        cells = numba.typed.List([cells])
-    if isinstance(cells, list):
-        cells = numba.typed.List(cells)
-
-    assert len(qr_pts) == len(qr_w)
-
-    # Find first non-empty
-    k = 0
-    while True:
-        if qr_pts[k].any():
-            gdim = float(len(qr_pts[k])) / float(len(qr_w[k]))
-            assert gdim.is_integer()
-            gdim = int(gdim)
-            break
-        else:
-            k += 1
-
-    # Cells are dense, but qr_pts, qr_w, qr_n not. qr_pts and qr_w
-    # (not qr_n) may for convenience be of length 1.
-    if len(qr_pts) == 1:
-        assert isinstance(qr_pts[0], np.ndarray)
-        qr_pts = replicate(qr_pts[0], cells)
-
-    if len(qr_w) == 1:
-        assert isinstance(qr_w[0], np.ndarray)
-        qr_w = replicate(qr_w[0], cells)
-
-    for cell in cells:
-        assert len(qr_pts[cell]) == gdim * len(qr_w[cell])
-
-    if qr_n:
-        if isinstance(qr_n, list):
-            qr_n = numba.typed.List(qr_n)
-        if len(qr_n) != len(qr_pts):
-            # FIXME Doesn't make sense to duplicate, but generated
-            # code requires some data
-            assert isinstance(qr_n[0], np.ndarray)
-            qr_n = replicate(qr_n[0], cells)
-        for cell in cells:
-            assert len(qr_n[cell]) == len(qr_pts[cell])
-
-    if not qr_n:
-        # Let qr_n contain dummy data since it shouldn't be used in
-        # the form, but the generated code calls
-        # e.g. facet_normal[2*ip+1].
-        qr_n = qr_pts  # Pointer
-
-    return qr_pts, qr_w, qr_n, cells
-
-
-def replicate(a, cells):
-    b = numba.typed.List()
-    N = max(cells) + 1  # not necessarily num_cells, but sufficient
-    for i in range(N):
-        b.append(np.array([]))
-    for cell in cells:
-        b[cell] = a.copy()
-    return b
-
-
 def get_inactive_dofs(V, cut_cells, uncut_cells):
     dofs, _ = get_dofs(V)
-    num_vertices = get_num_nodes(V.mesh)
-    assert num_vertices == dofs.max() + 1  # P1 elements
-    all_dofs = np.arange(0, num_vertices)
+    num_dofs = V.dofmap.index_map.size_local * V.dofmap.index_map_bs
+    all_dofs = np.arange(num_dofs)
     for cells in [cut_cells, uncut_cells]:
         for cell in cells:
-            cell_dofs = V.dofmap.cell_dofs(cell)
-            all_dofs[cell_dofs] = -1
-    inactive_dofs = np.arange(0, num_vertices, dtype="int32")[all_dofs > -1]
-
-    # num_cells = get_num_cells(V)
-    # for c in range(num_cells):
-    #     cell_dofs = V.dofmap.cell_dofs(c)
-    #     print(c, cell_dofs)
-
-    # # histogram
-    # mesh = V.mesh
-    # mesh.topology.create_connectivity_all()
-    # num_cells = get_num_cells(mesh)
-    # hist = np.zeros(num_vertices)
-    # #for c in range(num_cells):
-    # for c in cut_cells:
-    #     cell_dofs = V.dofmap.cell_dofs(c)
-    #     for dof in cell_dofs:
-    #         hist[dof] += 1
-    # x = mesh.geometry.x
-    # for i in range(num_vertices):
-    #     if hist[i] == 0:
-    #         print(x[i][0],x[i][1])
-
+            all_dofs[dofs[cell, :]] = -1
+    inactive_dofs = np.arange(num_dofs, dtype=np.int32)[all_dofs > -1]
     return inactive_dofs
 
 
@@ -178,14 +100,9 @@ def lock_inactive_dofs(inactive_dofs, A):
         for i in zeros[0]:
             A.setValue(i, i, 1.0)
         A.assemble()
-        RuntimeError("Zeros on the diagonal should not happen")
+        raise RuntimeError("Zeros on the diagonal should not happen")
 
     return A
-
-
-@numba.njit
-def printer(s, a):
-    print(s, a)
 
 
 def dump(filename, A, do_print=False):
@@ -197,14 +114,11 @@ def dump(filename, A, do_print=False):
         for r in range(A.size[0]):
             cols, vals = A.getRow(r)
             for i in range(len(cols)):
-                s = str(r + 1) + " " + str(cols[i] + 1) + " " + str(vals[i]) + "\n"
+                s = str(r) + " " + str(cols[i]) + " " + str(vals[i]) + "\n"
                 f.write(s)
                 if do_print:
                     print(s, end="")
         f.close()
-        print(
-            f"A=load('{filename}'); A=sparse(A(:,1),A(:,2),A(:,3)); condest(A), spy(A)"
-        )
     else:
         f = open(filename, "w")
         np.savetxt(f, A.array)
@@ -244,7 +158,6 @@ def get_facetags(mesh, cut_cells, outside_cells, ghost_penalty_tag=1):
     else:
         init_tag = ghost_penalty_tag - 1
     tdim = mesh.topology.dim
-    # face_map = mesh.topology.index_map(tdim-1)
     num_faces = get_num_faces(mesh)
     faces = np.arange(0, num_faces)
 

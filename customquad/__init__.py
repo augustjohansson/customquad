@@ -1,3 +1,6 @@
 from .assemble_matrix import assemble_matrix
 from .assemble_vector import assemble_vector
 from .assemble_scalar import assemble_scalar
+
+from .create_high_order_mesh import create_high_order_quad_mesh
+from .create_high_order_mesh import create_high_order_hex_mesh

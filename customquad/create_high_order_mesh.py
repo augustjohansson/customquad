@@ -11,35 +11,51 @@ import gmsh
 flatten = lambda l: [item for sublist in l for item in sublist]
 
 
-def create_high_order_quad_mesh(Nx, Ny, order):
-    assert Nx == 1
-    assert Ny == 1
-
-    cell_type = dolfinx.mesh.CellType.quadrilateral
-
-    res = 10.0
+def create_high_order_quad_mesh(xrange, N, order, debug=False):
+    gdim = 2
     gmsh.initialize()
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", res)
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", res)
+    model_name = "create_high_order_quad_mesh"
+    gmsh.model.add(model_name)
+    factory = gmsh.model.geo
 
-    if cell_type == dolfinx.mesh.CellType.quadrilateral:
-        gmsh.option.setNumber("Mesh.Algorithm", 2 if order == 2 else 5)
+    xmin = xrange[0]
+    xmax = xrange[1]
 
-    gmsh.model.occ.addRectangle(0, 0, 0, 1, 1, tag=1)
-    gmsh.model.occ.synchronize()
+    p0 = factory.addPoint(xmin[0], xmin[1], 0)
+    p1 = factory.addPoint(xmax[0], xmin[1], 0)
+    p2 = factory.addPoint(xmin[0], xmax[1], 0)
+    p3 = factory.addPoint(xmax[0], xmax[1], 0)
+    l0 = factory.addLine(p0, p1)
+    l1 = factory.addLine(p0, p2)
+    l2 = factory.addLine(p1, p3)
+    l3 = factory.addLine(p2, p3)
+    cl = factory.addCurveLoop([l0, l2, -l3, -l1])
+    surf = factory.addPlaneSurface([cl])
 
-    gmsh.model.mesh.generate(2)
-    if cell_type == dolfinx.mesh.CellType.quadrilateral:
-        gmsh.model.mesh.recombine()
+    gmsh.model.geo.mesh.setTransfiniteCurve(l0, N[0] + 1)
+    gmsh.model.geo.mesh.setTransfiniteCurve(l3, N[0] + 1)
+    gmsh.model.geo.mesh.setTransfiniteCurve(l1, N[1] + 1)
+    gmsh.model.geo.mesh.setTransfiniteCurve(l2, N[1] + 1)
+    gmsh.model.geo.mesh.setTransfiniteSurface(surf)
+
+    gmsh.model.geo.mesh.setRecombine(2, surf)
+    factory.synchronize()
+
+    # Create mesh
+    gmsh.model.mesh.generate(gdim)
+    if debug:
+        gmsh.write(model_name + "_" + str(N[0]) + "_" + str(N[1]) + ".mesh")
     gmsh.model.mesh.setOrder(order)
-    idx, points, _ = gmsh.model.mesh.getNodes()
-    points = points.reshape(-1, 3)
+
+    # Mesh conversion
+    idx, coords, _ = gmsh.model.mesh.getNodes()
+    coords = coords.reshape(-1, 3)
+    assert coords.shape[0] == (N[0] + 1) * (N[1] + 1)
     idx -= 1
     srt = np.argsort(idx)
     assert np.all(idx[srt] == np.arange(len(idx)))
-    x = points[srt]
-
-    element_types, element_tags, node_tags = gmsh.model.mesh.getElements(dim=2)
+    x = coords[srt, :gdim]
+    element_types, element_tags, node_tags = gmsh.model.mesh.getElements(dim=gdim)
     (
         name,
         dim,
@@ -50,106 +66,20 @@ def create_high_order_quad_mesh(Nx, Ny, order):
     ) = gmsh.model.mesh.getElementProperties(element_types[0])
 
     cells = node_tags[0].reshape(-1, num_nodes) - 1
-    if cell_type == dolfinx.mesh.CellType.triangle:
-        gmsh_cell_id = gmsh.model.mesh.getElementType("triangle", order)
-    elif cell_type == dolfinx.mesh.CellType.quadrilateral:
-        gmsh_cell_id = gmsh.model.mesh.getElementType("quadrangle", order)
-    gmsh.finalize()
-
+    cell_type = dolfinx.mesh.CellType.quadrilateral
     cells = cells[:, dolfinx.io.gmshio.cell_perm_array(cell_type, cells.shape[1])]
+
+    gmsh_cell_id = gmsh.model.mesh.getElementType("quadrangle", order)
     mesh = dolfinx.mesh.create_mesh(
         MPI.COMM_WORLD, cells, x, dolfinx.io.gmshio.ufl_mesh(gmsh_cell_id, x.shape[1])
     )
 
+    assert mesh.topology.index_map(0).size_local == (N[0] + 1) * (N[1] + 1)
+    assert mesh.topology.index_map(gdim).size_local == N[0] * N[1]
+
+    gmsh.finalize()
+
     return mesh
-
-
-# def create_high_order_quad_mesh(Nx, Ny, polynomial_order):
-#     def coord_to_vertex(x, y):
-#         return (polynomial_order + 1) * y + x
-
-#     def get_points(order, Nx, Ny):
-#         points = []
-#         points += [[i / order, 0] for i in range(order + 1)]
-#         for j in range(1, order):
-#             points += [[i / order, j / order] for i in range(order + 1)]
-#         points += [[j / order, 1] for j in range(order + 1)]
-
-#         # Combine to several cells (test first w/o unique vertices)
-#         all_points = []
-#         pnp = np.array(points)
-
-#         ex = np.array([1.0, 0.0])
-#         for i in range(Nx):
-#             ptmp = pnp + i * ex
-#             all_points.append(ptmp.tolist())
-#         all_points_x = flatten(all_points)
-
-#         ey = np.array([0.0, 1.0])
-#         for j in range(1, Ny):
-#             for q in all_points_x:
-#                 ptmp = np.array(q) + j * ey
-#                 all_points.append([ptmp.tolist()])
-#         all_points = flatten(all_points)
-
-#         assert len(all_points) == (order + 1) ** 2 * Nx * Ny
-
-#         return all_points
-
-#     def get_cells(order, Nx, Ny):
-#         # Define a cell using DOLFINx ordering
-#         cell = [
-#             coord_to_vertex(i, j)
-#             for i, j in [(0, 0), (order, 0), (0, order), (order, order)]
-#         ]
-#         if order > 1:
-#             for i in range(1, order):
-#                 cell.append(coord_to_vertex(i, 0))
-#             for i in range(1, order):
-#                 cell.append(coord_to_vertex(0, i))
-#             for i in range(1, order):
-#                 cell.append(coord_to_vertex(order, i))
-#             for i in range(1, order):
-#                 cell.append(coord_to_vertex(i, order))
-
-#             for j in range(1, order):
-#                 for i in range(1, order):
-#                     cell.append(coord_to_vertex(i, j))
-
-#         # Combine to several cells as done for the points
-#         all_cells = []
-#         cnp = np.array(cell)
-#         n = len(cell)
-
-#         for i in range(Nx):
-#             ctmp = cnp + n * i
-#             all_cells.append(ctmp.tolist())
-
-#         cells_x = all_cells.copy()
-#         offset = np.array(cells_x).max() + 1
-
-#         for j in range(1, Ny):
-#             for cc in cells_x:
-#                 ctmp = np.array(cc) + j * offset
-#                 all_cells.append(ctmp.tolist())
-
-#         assert len(all_cells) == Nx * Ny
-
-#         return all_cells
-
-#     points = get_points(polynomial_order, Nx, Ny)
-#     cells = get_cells(polynomial_order, Nx, Ny)
-#     domain = ufl.Mesh(
-#         basix.ufl_wrapper.create_vector_element(
-#             "Q",
-#             "quadrilateral",
-#             polynomial_order,
-#             gdim=2,
-#             lagrange_variant=basix.LagrangeVariant.equispaced,
-#         )
-#     )
-#     mesh = dolfinx.mesh.create_mesh(MPI.COMM_WORLD, cells, points, domain)
-#     return mesh
 
 
 def create_high_order_hex_mesh(Nx, Ny, Nz, polynomial_order):
