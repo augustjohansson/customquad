@@ -9,7 +9,7 @@ RUN pip3 install --no-cache-dir --force-reinstall --no-deps git+https://github.c
 RUN pip3 install --no-cache-dir cppyy
 
 RUN git clone --depth=1 https://github.com/algoim/algoim.git && \
-    cp -r algoim /usr/include
+    cp -r algoim /usr/local/include
 
 RUN pip3 install --no-cache-dir git+https://github.com/augustjohansson/customquad.git
 
