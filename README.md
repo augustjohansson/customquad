@@ -2,8 +2,8 @@
 
 The Customquad library allows for custom quadrature rules to be used
 in FEniCSx (https://fenicsproject.org). By custom quadrature we mean
-user-specified quadrature rules in different elements specified at
-runtime. These can be used for performing surface and volume integrals
+**user-specified quadrature rules in different elements specified at
+runtime**. These can be used for performing surface and volume integrals
 over cut elements in methods such as CutFEM, TraceFEM and
 \phi-FEM. The user can also provide normals in the quadrature
 points.
@@ -55,13 +55,21 @@ most challenging part. I have the following setup:
 ```
 git clone git@github.com:augustjohansson/customquad.git
 cd customquad
-git clone -b august/2023cq git@github.com:augustjohansson/ffcx-custom.git
-git clone git+https://github.com/augustjohansson/ufl-custom.git
+git clone git@github.com:augustjohansson/ffcx-custom.git
+git clone git@github.com:augustjohansson/ufl-custom.git
 git config --global --add safe.directory /root/ffcx-custom
 ```
 Then I start the container and use the `install-all` alias in the
 provided bashrc.sh to install ffcx, ufl and customquad, as well as
 overriding the C compiler with a C++ compiler as described above.
+
+## How to contribute
+
+If you find a bug or have suggestions for improvements, please place
+an issue using the GitHub issue tracker. To contribute to the code,
+please file a pull request or start an issue as a basis for
+discussions. Please follow the code of conduct of
+https://www.contributor-covenant.org.
 
 ## Description
 
