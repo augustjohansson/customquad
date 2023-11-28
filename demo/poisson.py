@@ -7,6 +7,7 @@ import numpy as np
 from petsc4py import PETSc
 import argparse
 import algoim_utils
+import os
 
 
 # Setup arguments
@@ -19,10 +20,21 @@ parser.add_argument("-domain", type=str, default="circle")
 parser.add_argument("-p", type=int, default=1)
 parser.add_argument("-order", type=int, default=1)
 parser.add_argument("-verbose", action="store_true")
+parser.add_argument("-solver", type=str, default="mumps")
 args = parser.parse_args()
 print("arguments:")
 for arg in vars(args):
     print("\t", arg, getattr(args, arg))
+
+
+tag = (
+    "p" + str(args.p) + "_"
+    "order" + str(args.order) + "_"
+    "betaN" + str(args.betaN) + "_"
+    "betas" + str(args.betas) + "_"
+)
+outputdir = "output_" + tag
+os.makedirs(outputdir, exist_ok=True)
 
 
 def write(filename, mesh, data):
@@ -99,14 +111,20 @@ NN = np.array([args.N] * gdim, dtype=np.int32)
 # mesh_generator = dolfinx.mesh.create_rectangle
 # mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
 
-debug = False
-mesh = cq.create_high_order_quad_mesh(np.array([xmin, xmax]), NN, args.p, debug)
+# debug = True
+# if gdim == 2:
+#     mesh = cq.create_high_order_quad_mesh(np.array([xmin, xmax]), NN, args.p, debug)
+# else:
+#     mesh = cq.create_high_order_hex_mesh(np.array([xmin, xmax]), NN, args.p, debug)
+
+mesh = cq.create_mesh(np.array([xmin, xmax]), NN, args.p, args.verbose)
 
 # breakpoint()
 
-print(f"{NN=}")
-print(f"{xmin=}")
-print(f"{xmax=}")
+if args.verbose:
+    print(f"{NN=}")
+    print(f"{xmin=}")
+    print(f"{xmax=}")
 
 # V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", args.p))
 # dofs, num_loc_dofs = cq.utils.get_dofs(V)
@@ -173,7 +191,7 @@ facetags = cq.utils.get_facetags(
 )
 
 # Write cell tags
-write("output/celltags" + str(args.N) + ".xdmf", mesh, celltags)
+write(outputdir + "/celltags" + str(args.N) + ".xdmf", mesh, celltags)
 
 # FEM
 V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", args.p))
@@ -192,28 +210,27 @@ else:
 # print(dofs)
 # breakpoint()
 
-"""
-debug
-"""
-dofcoords = V.tabulate_dof_coordinates()
-dofs, _ = cq.utils.get_dofs(V)
-np.savetxt("dofcoords.txt", dofcoords)
-np.savetxt("dofs.txt", dofs)
 
-with open("xyz.txt", "w") as f:
-    for xx in xyz:
-        if len(xx):
-            m = len(xx)
-            np.savetxt(f, xx.reshape((m // 2, -1)))
-with open("xyz_bdry.txt", "w") as f:
-    for xx in xyz_bdry:
-        if len(xx):
-            m = len(xx)
-            np.savetxt(f, xx.reshape((m // 2, -1)))
+# # debug
+# dofcoords = V.tabulate_dof_coordinates()
+# dofs, _ = cq.utils.get_dofs(V)
+# np.savetxt("dofcoords.txt", dofcoords)
+# np.savetxt("dofs.txt", dofs)
 
-"""
+# with open("xyz.txt", "w") as f:
+#     for xx in xyz:
+#         if len(xx):
+#             m = len(xx)
+#             np.savetxt(f, xx.reshape((m // 2, -1)))
+# with open("xyz_bdry.txt", "w") as f:
+#     for xx in xyz_bdry:
+#         if len(xx):
+#             m = len(xx)
+#             np.savetxt(f, xx.reshape((m // 2, -1)))
 
-"""
+# """
+
+# """
 
 
 # Setup boundary traction and rhs
@@ -310,7 +327,7 @@ if args.verbose:
 assert np.isfinite(A.norm()).all()
 
 
-def ksp_solve(A, b):
+def mumps(A, b):
     # Direct solver using mumps
     ksp = PETSc.KSP().create(mesh.comm)
     ksp.setOperators(A)
@@ -326,13 +343,38 @@ def ksp_solve(A, b):
     return vec
 
 
+def cg(A, b):
+    # Iterative solver using cg/gamg
+    opts = PETSc.Options()
+    opts["ksp_type"] = "cg"
+    opts["ksp_rtol"] = 1.0e-10
+    opts["pc_type"] = "gamg"
+    ksp = PETSc.KSP().create(mesh.comm)
+    ksp.setFromOptions()
+    ksp.setOperators(A)
+    vec = b.copy()
+    t = dolfinx.common.Timer()
+    ksp.solve(b, vec)
+    print("Solve took", t.elapsed()[0])
+    print("Matrix size", len(b.array))
+    vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    return vec
+
+
 # Solve
-vec = ksp_solve(A, b)
+if args.solver == "mumps":
+    vec = mumps(A, b)
+elif args.solver == "cg":
+    vec = cg(A, b)
+else:
+    RuntimeError("Unknown solver", args.solver)
+
+
 uh = dolfinx.fem.Function(V)
 uh.vector.setArray(vec.array)
 uh.name = "uh"
 
-write("output/poisson" + str(args.N) + ".xdmf", mesh, uh)
+write(outputdir + "/poisson" + str(args.N) + ".xdmf", mesh, uh)
 assert np.isfinite(vec.array).all()
 assert np.isfinite(uh.vector.array).all()
 
@@ -388,7 +430,7 @@ print("uh in range", uh_vals.min(), uh_vals.max())
 
 if gdim == 2:
     # Save coordinates and solution for plotting
-    filename = "output/uu" + str(args.N) + ".txt"
+    filename = outputdir + "/uu" + str(args.N) + ".txt"
     uu = pts
     uu[:, 2] = uh_vals
     np.savetxt(filename, uu)
@@ -397,7 +439,7 @@ if gdim == 2:
     err = pts
     xy = [pts[:, 0], pts[:, 1]]
     err[:, 2] = abs(u_exact(np)(xy) - uh_vals)
-    filename = "output/err" + str(args.N) + ".txt"
+    filename = outputdir + "/err" + str(args.N) + ".txt"
     np.savetxt(filename, err)
 
 # Print
@@ -416,4 +458,7 @@ conv = np.array(
 )
 
 print(conv)
-np.savetxt("output/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
+
+# np.savetxt("output/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
+
+np.savetxt(outputdir + "/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
