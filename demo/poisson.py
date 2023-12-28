@@ -28,6 +28,7 @@ for arg in vars(args):
 
 
 tag = (
+    "domain" + args.domain + "_"
     "p" + str(args.p) + "_"
     "order" + str(args.order) + "_"
     "betaN" + str(args.betaN) + "_"
