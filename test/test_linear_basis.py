@@ -6,8 +6,6 @@ import customquad as cq
 import ufl
 import FIAT
 import common
-from petsc4py import PETSc
-import itertools
 
 
 @pytest.mark.parametrize(
@@ -22,17 +20,23 @@ import itertools
 @pytest.mark.parametrize("xmin", [[0, 0], [-0.25, -10.25]])
 @pytest.mark.parametrize("xmax", [[1, 1], [1.25, 17.5]])
 @pytest.mark.parametrize("fcn", [common.fcn1, common.fcn2, common.fcn3, common.fcn4])
-def test_quads_assembly(assembler, norm, N, xmin, xmax, fcn):
+@pytest.mark.parametrize("use_dolfinx_mesh", [False, True])
+def test_quads_assembly(assembler, norm, N, xmin, xmax, fcn, use_dolfinx_mesh):
+
     polynomial_order = 1
     quadrature_degree = 2
     fiat_element = FIAT.reference_element.UFCQuadrilateral()
-    cell_type = dolfinx.mesh.CellType.quadrilateral
-    mesh = dolfinx.mesh.create_rectangle(
-        MPI.COMM_WORLD,
-        np.array([xmin, xmax]),
-        np.array(N),
-        cell_type,
-    )
+
+    if use_dolfinx_mesh:
+        cell_type = dolfinx.mesh.CellType.quadrilateral
+        mesh = dolfinx.mesh.create_rectangle(
+            MPI.COMM_WORLD,
+            np.array([xmin, xmax]),
+            np.array(N),
+            cell_type,
+        )
+    else:
+        mesh = cq.create_mesh(np.array([xmin, xmax]), np.array(N), polynomial_order)
 
     b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
@@ -50,38 +54,59 @@ def test_quads_assembly(assembler, norm, N, xmin, xmax, fcn):
 @pytest.mark.parametrize("xmin", [[0, 0, 0], [-0.25, -10.25, 0.25]])
 @pytest.mark.parametrize("xmax", [[1, 1, 1], [1.25, 17.5, 4.4]])
 @pytest.mark.parametrize("fcn", [common.fcn1, common.fcn2, common.fcn3, common.fcn4])
-def test_hexes_assembly(assembler, norm, N, xmin, xmax, fcn):
+@pytest.mark.parametrize("use_dolfinx_mesh", [False, True])
+def test_hexes_assembly(assembler, norm, N, xmin, xmax, fcn, use_dolfinx_mesh):
+
     polynomial_order = 1
     quadrature_degree = 2
     fiat_element = FIAT.reference_element.UFCHexahedron()
-    cell_type = dolfinx.mesh.CellType.hexahedron
-    mesh = dolfinx.mesh.create_box(
-        MPI.COMM_WORLD,
-        np.array([xmin, xmax]),
-        np.array(N),
-        cell_type,
-    )
+
+    if use_dolfinx_mesh:
+        cell_type = dolfinx.mesh.CellType.hexahedron
+        mesh = dolfinx.mesh.create_box(
+            MPI.COMM_WORLD,
+            np.array([xmin, xmax]),
+            np.array(N),
+            cell_type,
+        )
+    else:
+        mesh = cq.create_mesh(np.array([xmin, xmax]), np.array(N), polynomial_order)
 
     b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
 
 
-def test_edges():
+@pytest.mark.parametrize("use_dolfinx_mesh", [False, True])
+def test_edges(use_dolfinx_mesh):
     # Integrate 2x+y over the edges of a rectangle. Find the edges
     # using the topology of the mesh.
 
     N = 1
-    cell_type = dolfinx.mesh.CellType.quadrilateral
     xmin = np.array([-1.0, -1.0])
     xmax = np.array([4.0, 1.0])
-    mesh = dolfinx.mesh.create_rectangle(
-        MPI.COMM_WORLD, np.array([xmin, xmax]), np.array([N, N]), cell_type=cell_type
-    )
+
+    if use_dolfinx_mesh:
+        cell_type = dolfinx.mesh.CellType.quadrilateral
+        mesh = dolfinx.mesh.create_rectangle(
+            MPI.COMM_WORLD,
+            np.array([xmin, xmax]),
+            np.array([N, N]),
+            cell_type=cell_type,
+        )
+    else:
+        polynomial_order = 1
+        mesh = cq.create_mesh(
+            np.array([xmin, xmax]), np.array([N, N]), polynomial_order
+        )
+
     num_cells = cq.utils.get_num_cells(mesh)
     cells = np.arange(num_cells)
 
     x = ufl.SpatialCoordinate(mesh)
-    fcn = lambda x: 2 * x[0] + x[1]
+
+    def fcn(x):
+        return 2 * x[0] + x[1]
+
     dx = ufl.dx(metadata={"quadrature_rule": "runtime"})
     form = dolfinx.fem.form(fcn(x) * dx(domain=mesh))
 
@@ -115,15 +140,28 @@ def test_edges():
         assert abs(m[k] - m_exact[k]) / m_exact[k] < 1e-10
 
 
-def test_edge_integral():
+@pytest.mark.parametrize("use_dolfinx_mesh", [False, True])
+def test_edge_integral(use_dolfinx_mesh):
+
     # Test bdry integral with basis function
     N = 1
-    cell_type = dolfinx.mesh.CellType.quadrilateral
     xmin = np.array([-0.25, -10.25])
     xmax = np.array([1.25, 17.5])
-    mesh = dolfinx.mesh.create_rectangle(
-        MPI.COMM_WORLD, np.array([xmin, xmax]), np.array([N, N]), cell_type=cell_type
-    )
+
+    if use_dolfinx_mesh:
+        cell_type = dolfinx.mesh.CellType.quadrilateral
+        mesh = dolfinx.mesh.create_rectangle(
+            MPI.COMM_WORLD,
+            np.array([xmin, xmax]),
+            np.array([N, N]),
+            cell_type=cell_type,
+        )
+    else:
+        polynomial_order = 1
+        mesh = cq.create_mesh(
+            np.array([xmin, xmax]), np.array([N, N]), polynomial_order
+        )
+
     tdim = mesh.topology.dim
     num_cells = cq.utils.get_num_cells(mesh)
     cells = np.arange(num_cells)
@@ -186,6 +224,7 @@ def test_edge_integral():
     qr_pts[1] = (np.mean(x[top_nodes], axis=0) - xmin) / xdiff
     qr_pts[2] = (np.mean(x[left_nodes], axis=0) - xmin) / xdiff
     qr_pts[3] = (np.mean(x[right_nodes], axis=0) - xmin) / xdiff
+
     for k in range(4):
         assert np.all(abs(qr_pts[k] - qr_pts_ref[k]) < 1e-10)
 
@@ -194,6 +233,7 @@ def test_edge_integral():
     qr_w = facet_size / cell_volume
 
     tags = [bottom_tag, top_tag, left_tag, right_tag]
+
     for k in range(4):
         qr_pts_local = np.expand_dims(qr_pts[k], axis=0)
         qr_w_local = np.expand_dims(qr_w[k], axis=(0, 1))
@@ -208,22 +248,32 @@ def test_edge_integral():
             dolfinx.fem.form(integrand * ds_local)
         )
 
-        for m in range(len(b.array)):
-            assert abs(b.array[m] - b_exact.array[m]) < 1e-10
+        for m, y in enumerate(b.array):
+            assert abs(y - b_exact.array[m]) < 1e-10
 
 
-def test_face_integral():
+@pytest.mark.parametrize("use_dolfinx_mesh", [True, False])
+def test_face_integral(use_dolfinx_mesh):
+
     # Test bdry integral with basis function
     N = 1
-    cell_type = dolfinx.mesh.CellType.hexahedron
     bbmin = np.array([-0.25, -10.25, -4.4])
     bbmax = np.array([1.25, 17.5, 0.1])
-    mesh = dolfinx.mesh.create_box(
-        MPI.COMM_WORLD,
-        np.array([bbmin, bbmax]),
-        np.array([N, N, N]),
-        cell_type=cell_type,
-    )
+
+    if use_dolfinx_mesh:
+        cell_type = dolfinx.mesh.CellType.hexahedron
+        mesh = dolfinx.mesh.create_box(
+            MPI.COMM_WORLD,
+            np.array([bbmin, bbmax]),
+            np.array([N, N, N]),
+            cell_type,
+        )
+    else:
+        polynomial_order = 1
+        mesh = cq.create_mesh(
+            np.array([bbmin, bbmax]), np.array([N, N, N]), polynomial_order
+        )
+
     tdim = mesh.topology.dim
     num_cells = cq.utils.get_num_cells(mesh)
     cells = np.arange(num_cells)
@@ -299,6 +349,7 @@ def test_face_integral():
     )
     xdiff = bbmax - bbmin
     x = mesh.geometry.x[:, 0:tdim]
+
     num_faces = 6
     qr_pts = np.empty((num_faces, tdim))
     qr_pts[0] = (np.mean(x[xmin_nodes], axis=0) - bbmin) / xdiff
@@ -307,6 +358,7 @@ def test_face_integral():
     qr_pts[3] = (np.mean(x[ymax_nodes], axis=0) - bbmin) / xdiff
     qr_pts[4] = (np.mean(x[zmin_nodes], axis=0) - bbmin) / xdiff
     qr_pts[5] = (np.mean(x[zmax_nodes], axis=0) - bbmin) / xdiff
+
     for k in range(num_faces):
         assert np.all(abs(qr_pts[k] - qr_pts_ref[k]) < 1e-10)
 
@@ -318,6 +370,7 @@ def test_face_integral():
     qr_w = facet_size / cell_volume
 
     tags = [xmin_tag, xmax_tag, ymin_tag, ymax_tag, zmin_tag, zmax_tag]
+
     for k in range(num_faces):
         qr_pts_local = np.expand_dims(qr_pts[k], axis=0)
         qr_w_local = np.expand_dims(qr_w[k], axis=(0, 1))

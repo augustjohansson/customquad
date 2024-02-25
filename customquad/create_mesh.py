@@ -1,18 +1,16 @@
 import dolfinx
-import ufl
-import basix
 import numpy as np
 from mpi4py import MPI
 import gmsh
-
-flatten = lambda l: [item for sublist in l for item in sublist]
 
 
 def create_mesh(xrange, N, degree, debug=False):
     # 1. Create gmsh grid
     gmsh.initialize()
+    if not debug:
+        gmsh.option.setNumber("General.Terminal", 0)
     factory = gmsh.model.occ
-    model_name = "create_high_order_mesh"
+    model_name = "cq_create_mesh"
     gmsh.model.add(model_name)
     factory = gmsh.model.occ
 
@@ -31,7 +29,7 @@ def create_mesh(xrange, N, degree, debug=False):
         dx_cell_type = dolfinx.mesh.CellType.hexahedron
         gmsh_cell_type = "hexahedron"
     else:
-        RuntimeError("Unknown dimension")
+        raise RuntimeError("Unknown dimension")
 
     factory.synchronize()
 
@@ -56,9 +54,12 @@ def create_mesh(xrange, N, degree, debug=False):
     gmsh.model.mesh.generate(gdim)
 
     if debug:
-        Nstr = str(N).replace(" ", "_").replace("[", "").replace("]", "")
-        gmsh.write("output/" + model_name + "_" + Nstr + ".msh")
-        gmsh.write("output/" + model_name + "_" + Nstr + ".mesh")
+        from os import makedirs
+
+        N_str = str(N).replace(" ", "_").replace("[", "").replace("]", "")
+        makedirs("output", exist_ok=True)
+        gmsh.write("output/" + model_name + "_" + N_str + ".msh")
+        gmsh.write("output/" + model_name + "_" + N_str + ".mesh")
 
     gmsh.model.mesh.setOrder(degree)
 
@@ -66,23 +67,25 @@ def create_mesh(xrange, N, degree, debug=False):
     # test_higher_order_mesh.py in dolfinx)
     idx, coords, _ = gmsh.model.mesh.getNodes()
     coords = coords.reshape(-1, 3)
-    assert coords.shape[0] == degree**gdim * np.prod(N + 1)
+    assert coords.shape[0] == np.prod((degree * N + 1))
     idx -= 1
     srt = np.argsort(idx)
     assert np.all(idx[srt] == np.arange(len(idx)))
     x = coords[srt, :gdim]
-    element_types, element_tags, node_tags = gmsh.model.mesh.getElements(dim=gdim)
+    element_types, _, node_tags = gmsh.model.mesh.getElements(dim=gdim)
     (
-        name,
+        _,
         dim,
         degree,
         num_nodes,
-        local_coords,
-        num_first_order_nodes,
+        _,
+        _,
     ) = gmsh.model.mesh.getElementProperties(element_types[0])
 
     cells = node_tags[0].reshape(-1, num_nodes) - 1
-    cells = cells[:, dolfinx.io.gmshio.cell_perm_array(dx_cell_type, cells.shape[1])]
+    # cells = cells[:, dolfinx.io.gmshio.cell_perm_array(dx_cell_type, cells.shape[1])]
+    perm = [2, 6, 3, 7, 1, 5, 0, 4]
+    cells = cells[:, perm]
 
     gmsh_cell_id = gmsh.model.mesh.getElementType(gmsh_cell_type, degree)
     domain = dolfinx.io.gmshio.ufl_mesh(gmsh_cell_id, x.shape[1])
@@ -103,7 +106,7 @@ def create_mesh(xrange, N, degree, debug=False):
 
     assert mesh.topology.index_map(0).size_local == np.prod(N + 1)
     assert mesh.topology.index_map(gdim).size_local == np.prod(N)
-    assert mesh.geometry.x.shape[0] == degree**gdim * np.prod(N + 1)
+    assert mesh.geometry.x.shape[0] == np.prod((degree * N + 1))
 
     gmsh.finalize()
 
