@@ -4,7 +4,6 @@ from mpi4py import MPI
 import numpy as np
 import customquad as cq
 import ufl
-import FIAT
 import common
 
 
@@ -25,7 +24,6 @@ def test_quads_assembly(assembler, norm, N, xmin, xmax, fcn, use_dolfinx_mesh):
 
     polynomial_order = 1
     quadrature_degree = 2
-    fiat_element = FIAT.reference_element.UFCQuadrilateral()
 
     if use_dolfinx_mesh:
         cell_type = dolfinx.mesh.CellType.quadrilateral
@@ -38,7 +36,7 @@ def test_quads_assembly(assembler, norm, N, xmin, xmax, fcn, use_dolfinx_mesh):
     else:
         mesh = cq.create_mesh(np.array([xmin, xmax]), np.array(N), polynomial_order)
 
-    b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
+    b, b_ref = assembler(mesh, polynomial_order, quadrature_degree, fcn)
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
 
 
@@ -59,7 +57,6 @@ def test_hexes_assembly(assembler, norm, N, xmin, xmax, fcn, use_dolfinx_mesh):
 
     polynomial_order = 1
     quadrature_degree = 2
-    fiat_element = FIAT.reference_element.UFCHexahedron()
 
     if use_dolfinx_mesh:
         cell_type = dolfinx.mesh.CellType.hexahedron
@@ -72,7 +69,7 @@ def test_hexes_assembly(assembler, norm, N, xmin, xmax, fcn, use_dolfinx_mesh):
     else:
         mesh = cq.create_mesh(np.array([xmin, xmax]), np.array(N), polynomial_order)
 
-    b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
+    b, b_ref = assembler(mesh, polynomial_order, quadrature_degree, fcn)
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
 
 

@@ -3,7 +3,6 @@ import dolfinx
 import numpy as np
 import customquad as cq
 import ufl
-import FIAT
 import common
 
 
@@ -23,9 +22,8 @@ def test_quads_assembly(assembler, norm, N, xmin, xmax, fcn):
 
     polynomial_order = 2
     quadrature_degree = 4
-    fiat_element = FIAT.reference_element.UFCQuadrilateral()
     mesh = cq.create_mesh(np.array([xmin, xmax]), np.array(N), polynomial_order)
-    b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
+    b, b_ref = assembler(mesh, polynomial_order, quadrature_degree, fcn)
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
 
 
@@ -45,9 +43,8 @@ def test_hexes_assembly(assembler, norm, N, xmin, xmax, fcn):
 
     polynomial_order = 2
     quadrature_degree = 4
-    fiat_element = FIAT.reference_element.UFCHexahedron()
     mesh = cq.create_mesh(np.array([xmin, xmax]), np.array(N), polynomial_order)
-    b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
+    b, b_ref = assembler(mesh, polynomial_order, quadrature_degree, fcn)
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
 
 

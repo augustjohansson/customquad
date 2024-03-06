@@ -2,9 +2,8 @@
 
 import dolfinx
 import ufl
-from ufl import inner
 import numpy as np
-import FIAT
+import basix
 from numpy import sin, pi, exp
 import customquad as cq
 from mpi4py import MPI
@@ -38,20 +37,21 @@ def matrix_norm(x):
     return x.norm()
 
 
-def assemble_scalar_test(mesh, fiat_element, polynomial_order, quadrature_degree, fcn):
+def assemble_scalar_test(mesh, polynomial_order, quadrature_degree, fcn):
     # Setup integrand
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
     f = dolfinx.fem.Function(V)
     f.interpolate(fcn)
-    integrand = inner(f, f)
+    integrand = ufl.inner(f, f)
 
     # Runtime quadrature
     L = dolfinx.fem.form(integrand * ufl.dx(metadata={"quadrature_rule": "runtime"}))
     num_cells = mesh.topology.index_map(mesh.topology.dim).size_local
     cells = np.arange(num_cells)
-    q = FIAT.create_quadrature(fiat_element, quadrature_degree)
-    qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
-    qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
+    cell_type = getattr(basix.CellType, mesh.topology.cell_type.name)
+    p, w = basix.make_quadrature(cell_type, quadrature_degree)
+    qr_pts = np.tile(p.flatten(), [num_cells, 1])
+    qr_w = np.tile(w, [num_cells, 1])
     b = cq.assemble_scalar(L, [(cells, qr_pts, qr_w)])
 
     # Reference
@@ -61,21 +61,22 @@ def assemble_scalar_test(mesh, fiat_element, polynomial_order, quadrature_degree
     return b, b_ref
 
 
-def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree, fcn):
+def assemble_vector_test(mesh, polynomial_order, quadrature_degree, fcn):
     # Setup integrand
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
     v = ufl.TestFunction(V)
     f = dolfinx.fem.Function(V)
     f.interpolate(fcn)
-    integrand = inner(f, v)
+    integrand = ufl.inner(f, v)
 
     # Runtime quadrature
     L = dolfinx.fem.form(integrand * ufl.dx(metadata={"quadrature_rule": "runtime"}))
     num_cells = mesh.topology.index_map(mesh.topology.dim).size_local
     cells = np.arange(num_cells)
-    q = FIAT.create_quadrature(fiat_element, quadrature_degree)
-    qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
-    qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
+    cell_type = getattr(basix.CellType, mesh.topology.cell_type.name)
+    p, w = basix.make_quadrature(cell_type, quadrature_degree)
+    qr_pts = np.tile(p.flatten(), [num_cells, 1])
+    qr_w = np.tile(w, [num_cells, 1])
     b = cq.assemble_vector(L, [(cells, qr_pts, qr_w)])
 
     # Reference
@@ -85,20 +86,21 @@ def assemble_vector_test(mesh, fiat_element, polynomial_order, quadrature_degree
     return b, b_ref
 
 
-def assemble_matrix_test(mesh, fiat_element, polynomial_order, quadrature_degree, fcn):
+def assemble_matrix_test(mesh, polynomial_order, quadrature_degree, fcn):
     # Setup integrand
     V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
     u = ufl.TrialFunction(V)
     v = ufl.TestFunction(V)
-    integrand = inner(u, v)
+    integrand = ufl.inner(u, v)
 
     # Runtime quadrature
     L = dolfinx.fem.form(integrand * ufl.dx(metadata={"quadrature_rule": "runtime"}))
     num_cells = mesh.topology.index_map(mesh.topology.dim).size_local
     cells = np.arange(num_cells)
-    q = FIAT.create_quadrature(fiat_element, quadrature_degree)
-    qr_pts = np.tile(q.get_points().flatten(), [num_cells, 1])
-    qr_w = np.tile(q.get_weights().flatten(), [num_cells, 1])
+    cell_type = getattr(basix.CellType, mesh.topology.cell_type.name)
+    p, w = basix.make_quadrature(cell_type, quadrature_degree)
+    qr_pts = np.tile(p.flatten(), [num_cells, 1])
+    qr_w = np.tile(w, [num_cells, 1])
     A = cq.assemble_matrix(L, [(cells, qr_pts, qr_w)])
     A.assemble()
 
