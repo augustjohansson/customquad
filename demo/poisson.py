@@ -27,14 +27,15 @@ for arg in vars(args):
     print("\t", arg, getattr(args, arg))
 
 
-tag = (
-    "domain" + args.domain + "_"
-    "p" + str(args.p) + "_"
-    "order" + str(args.order) + "_"
-    "betaN" + str(args.betaN) + "_"
-    "betas" + str(args.betas) + "_"
-)
-outputdir = "output_" + tag
+# tag = (
+#     "domain" + args.domain + "_"
+#     "p" + str(args.p) + "_"
+#     "order" + str(args.order) + "_"
+#     "betaN" + str(args.betaN) + "_"
+#     "betas" + str(args.betas) + "_"
+# )
+# outputdir = "output_" + tag
+outputdir = "output"
 os.makedirs(outputdir, exist_ok=True)
 
 
@@ -191,8 +192,11 @@ facetags = cq.utils.get_facetags(
     mesh, cut_cells, outside_cells, ghost_penalty_tag=ghost_penalty_tag
 )
 
-# Write cell tags
-write(outputdir + "/celltags" + str(args.N) + ".xdmf", mesh, celltags)
+# Write mesh with tags
+with dolfinx.io.XDMFFile(mesh.comm, "output/msh.xdmf", "w") as xdmf:
+    xdmf.write_mesh(mesh)
+    xdmf.write_meshtags(celltags)
+    xdmf.write_meshtags(facetags)
 
 # FEM
 V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", args.p))
@@ -250,6 +254,10 @@ a_bdry = (
 )
 L_bdry = -inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
 a_stab = betas * avg(h) * inner(jump(n, grad(u)), jump(n, grad(v)))
+if args.p == 2:
+    a_stab += (
+        betas * avg(h) ** 1 * inner(jump(n, grad(grad(u))), jump(n, grad(grad(v))))
+    )
 
 # Standard measures
 dx_uncut = ufl.dx(subdomain_data=celltags, domain=mesh)
