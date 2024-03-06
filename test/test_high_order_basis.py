@@ -1,18 +1,10 @@
 import pytest
-import basix
 import dolfinx
-import ufl
-from mpi4py import MPI
 import numpy as np
+import customquad as cq
+import ufl
 import FIAT
 import common
-import customquad as cq
-from create_high_order_mesh import (
-    create_high_order_quad_mesh,
-    create_high_order_hex_mesh,
-)
-
-flatten = lambda l: [item for sublist in l for item in sublist]
 
 
 @pytest.mark.parametrize(
@@ -23,20 +15,17 @@ flatten = lambda l: [item for sublist in l for item in sublist]
         (common.assemble_matrix_test, common.matrix_norm),
     ],
 )
-@pytest.mark.parametrize(
-    # ("polynomial_order", "quadrature_degree"), [(1, 2), (2, 4), (3, 4)]  # , (4, 4)]
-    ("polynomial_order", "quadrature_degree"),
-    [(2, 4)],  # , (4, 4)]
-)
+@pytest.mark.parametrize("N", [[1, 1], [3, 1], [1, 3], [3, 4]])
+@pytest.mark.parametrize("xmin", [[0, 0], [-0.25, -10.25]])
+@pytest.mark.parametrize("xmax", [[1, 1], [1.25, 17.5]])
 @pytest.mark.parametrize("fcn", [common.fcn1, common.fcn2, common.fcn3, common.fcn4])
-def test_high_order_quads(assembler, norm, polynomial_order, quadrature_degree, fcn):
-    Nx = 2
-    Ny = 3
-    mesh = create_high_order_quad_mesh(Nx, Ny, polynomial_order)
+def test_quads_assembly(assembler, norm, N, xmin, xmax, fcn):
+
+    polynomial_order = 2
+    quadrature_degree = 4
     fiat_element = FIAT.reference_element.UFCQuadrilateral()
-
+    mesh = cq.create_mesh(np.array([xmin, xmax]), np.array(N), polynomial_order)
     b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
-
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
 
 
@@ -48,115 +37,63 @@ def test_high_order_quads(assembler, norm, polynomial_order, quadrature_degree, 
         (common.assemble_matrix_test, common.matrix_norm),
     ],
 )
-@pytest.mark.parametrize(
-    ("polynomial_order", "quadrature_degree"), [(1, 2), (2, 4)]  # , (3, 2), (4, 3)]
-)
+@pytest.mark.parametrize("N", [[1, 1, 1], [3, 1, 1], [1, 3, 1], [1, 1, 3], [3, 4, 5]])
+@pytest.mark.parametrize("xmin", [[0, 0, 0], [-0.25, -10.25, 0.25]])
+@pytest.mark.parametrize("xmax", [[1, 1, 1], [1.25, 17.5, 4.4]])
 @pytest.mark.parametrize("fcn", [common.fcn1, common.fcn2, common.fcn3, common.fcn4])
-# @pytest.mark.xfail
-@pytest.mark.skip
-def test_high_order_hexes(assembler, norm, polynomial_order, quadrature_degree, fcn):
-    Nx = 2
-    Ny = 3
-    Nz = 4
-    mesh = create_high_order_hex_mesh(Nx, Ny, Nz, polynomial_order)
+def test_hexes_assembly(assembler, norm, N, xmin, xmax, fcn):
+
+    polynomial_order = 2
+    quadrature_degree = 4
     fiat_element = FIAT.reference_element.UFCHexahedron()
-
+    mesh = cq.create_mesh(np.array([xmin, xmax]), np.array(N), polynomial_order)
     b, b_ref = assembler(mesh, fiat_element, polynomial_order, quadrature_degree, fcn)
-
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
 
 
-def test_edges():
-    # Integrate 2x+y over the edges of a rectangle. Find the edges
-    # using the topology of the mesh.
+@pytest.mark.parametrize("gdim", [2, 3])
+def test_dirac_property(gdim):
 
-    N = 1
-    polynomial_order = 1
+    N = [1] * gdim
+    xmin = np.array([-0.25, -10.25, -4.4])[0:gdim]
+    xmax = np.array([1.25, 17.5, 0.1])[0:gdim]
 
-    # xmin = np.array([0.0, 0.0])
-    # xmax = np.array([1.0, 1.0])
-    # cell_type = dolfinx.mesh.CellType.quadrilateral
-    # mesh1 = dolfinx.mesh.create_rectangle(
-    #     MPI.COMM_WORLD, np.array([xmin, xmax]), np.array([N, N]), cell_type=cell_type
-    # )
-
-    # mesh2 = create_high_order_quad_mesh(N, N, polynomial_order)
-
-    # for m in (mesh1, mesh2):
-    #     g = m.geometry
-    #     print(g.x)
-    #     print(g.cmap.variant)
-    #     print(g.dofmap)
-    #     print(g.input_global_indices)
-    # for m in (mesh1, mesh2):
-    #     t = m.topology
-    #     t.create_connectivity(t.dim, 0)
-    #     print(t.connectivity(t.dim, 0))
-
-    infile = dolfinx.io.XDMFFile(MPI.COMM_WORLD, f"quad_P{polynomial_order}.xdmf", "r")
-    mesh3 = infile.read_mesh(name="Grid")
-
-    breakpoint()
-
-    mesh = mesh3
-
-    tdim = mesh.topology.dim
-    xmin = np.min(mesh.geometry.x, axis=0)[0:tdim]
-    xmax = np.max(mesh.geometry.x, axis=0)[0:tdim]
-    xdiff = xmax - xmin
+    polynomial_order = 2
+    mesh = cq.create_mesh(np.array([xmin, xmax]), np.array(N), polynomial_order)
 
     num_cells = cq.utils.get_num_cells(mesh)
     cells = np.arange(num_cells)
 
-    x = ufl.SpatialCoordinate(mesh)
-    fcn = lambda x: 2 * x[0] + x[1]
+    V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", polynomial_order))
+    v = ufl.TestFunction(V)
+    integrand = 1 * v
     dx = ufl.dx(metadata={"quadrature_rule": "runtime"})
-    form = dolfinx.fem.form(fcn(x) * dx(domain=mesh))
+    form = dolfinx.fem.form(integrand * dx)
 
-    # Facet nodes
-    tdim = mesh.topology.dim
-    mesh.topology.create_connectivity(tdim - 1, 0)
-    f2n = mesh.topology.connectivity(tdim - 1, 0)
+    xdiff = xmax - xmin
+    cell_volume = np.prod(xdiff)
+    qr_w = np.array([[1.0 / cell_volume]])
 
-    cell_volume = np.prod(xmax - xmin)
+    for k, y in enumerate(V.tabulate_dof_coordinates()):
+        qr = (y[0:gdim] - xmin) / xdiff
+        qr_pts = np.expand_dims(qr, axis=0)
+        b = cq.assemble_vector(form, [(cells, qr_pts, qr_w)])
+        b.array[k] -= 1
 
-    midpoint = [None] * 4
-    facet_area = [None] * 4
-    qr_pts = [None] * 4
-    qr_w = [None] * 4
-    m = [None] * 4
-    m_exact = [None] * 4
-
-    for k in range(4):
-        n = f2n.links(k)
-
-        midpoint[k] = np.mean(mesh.geometry.x[n], axis=0)[0:tdim]
-        qr_pts[k] = np.expand_dims((midpoint[k] - xmin) / (xmax - xmin), axis=0)
-
-        facet_area[k] = np.linalg.norm(np.diff(mesh.geometry.x[n], axis=0))
-        qr_w[k] = np.array([[facet_area[k] / cell_volume]])
-
-        qr_data = [(cells, qr_pts[k], qr_w[k])]
-        m[k] = cq.assemble_scalar(form, qr_data)
-        m_exact[k] = fcn(midpoint[k]) * facet_area[k]
-
-        print(k, n, midpoint[k], qr_pts[k], qr_w[k], m[k], m_exact[k])
-        breakpoint()
-        assert abs(m[k] - m_exact[k]) / m_exact[k] < 1e-10
+        assert np.linalg.norm(b.array, np.inf) < 1e-14
 
 
 def test_edge_integral():
+
     # Test bdry integral with basis function
     N = 1
-    polynomial_order = 1
-    quadrature_degree = 2 * polynomial_order
+    xmin = np.array([-0.25, -10.25])
+    xmax = np.array([1.25, 17.5])
 
-    mesh = create_high_order_quad_mesh(N, N, polynomial_order)
+    polynomial_order = 2
+    mesh = cq.create_mesh(np.array([xmin, xmax]), np.array([N, N]), polynomial_order)
+
     tdim = mesh.topology.dim
-    xmin = np.min(mesh.geometry.x, axis=0)[0:tdim]
-    xmax = np.max(mesh.geometry.x, axis=0)[0:tdim]
-    xdiff = xmax - xmin
-
     num_cells = cq.utils.get_num_cells(mesh)
     cells = np.arange(num_cells)
 
@@ -201,43 +138,33 @@ def test_edge_integral():
     ds = ufl.Measure("ds", subdomain_data=marker)
     dx = ufl.dx(metadata={"quadrature_rule": "runtime"})
 
-    mesh.topology.create_connectivity(tdim - 1, 0)
-    f2n = mesh.topology.connectivity(tdim - 1, 0)
-
-    bottom_nodes = f2n.links(bottom_facets)
-    top_nodes = f2n.links(top_facets)
-    left_nodes = f2n.links(left_facets)
-    right_nodes = f2n.links(right_facets)
-
-    fiat_element = FIAT.reference_element.UFCInterval()
-    q1d = FIAT.create_quadrature(fiat_element, quadrature_degree)
-
-    facet_size = np.array([xdiff[0], xdiff[0], xdiff[1], xdiff[1]])
-    cell_volume = np.prod(xdiff)
-    qr_w = 0.5 * facet_size / cell_volume
-
-    bottom_dofs = dolfinx.fem.locate_dofs_topological(V, tdim - 1, bottom_facets)
-    top_dofs = dolfinx.fem.locate_dofs_topological(V, tdim - 1, top_facets)
-    left_dofs = dolfinx.fem.locate_dofs_topological(V, tdim - 1, left_facets)
-    right_dofs = dolfinx.fem.locate_dofs_topological(V, tdim - 1, right_facets)
-
     tags = [bottom_tag, top_tag, left_tag, right_tag]
 
-    # qr_pts are x0, y0, x1, y1, ...
-    qr_pts_local = np.zeros(tdim * q1d.get_points().size)
-    qr_pts_local[0::2] = q1d.get_points().flatten()
-    qr_pts_local = np.expand_dims(qr_pts_local, axis=0)
-    qr_w_local = np.expand_dims(q1d.get_weights().flatten(), axis=0)
+    qr0 = 0.5 * (1.0 - 1.0 / np.sqrt(3))
+    qr1 = 1 - qr0
+    qr_pts = np.empty((4, 4))
+    qr_pts[0] = np.array([qr0, 0.0, qr1, 0.0])
+    qr_pts[1] = np.array([qr0, 1.0, qr1, 1.0])
+    qr_pts[2] = np.array([0.0, qr0, 0.0, qr1])
+    qr_pts[3] = np.array([1.0, qr0, 1.0, qr1])
 
-    for k in range(4):
+    xdiff = xmax - xmin
+    facet_size = np.array([xdiff[0], xdiff[0], xdiff[1], xdiff[1]])
+    cell_volume = np.prod(xdiff)
+    qr_w = np.transpose(np.tile(0.5 * facet_size / cell_volume, (2, 1))).copy()
+
+    for k, tag in enumerate(tags):
+        qr_pts_local = np.expand_dims(qr_pts[k], axis=0)
+        qr_w_local = np.expand_dims(qr_w[k], axis=0)
+
         b = cq.assemble_vector(
             dolfinx.fem.form(integrand * dx),
             [(cells, qr_pts_local, qr_w_local)],
         )
 
-        ds_local = ds(tags[k])
         b_exact = dolfinx.fem.petsc.assemble_vector(
-            dolfinx.fem.form(integrand * ds_local)
+            dolfinx.fem.form(integrand * ds(tag))
         )
 
-        assert np.linalg.norm(b.array - b_exact.array) < 1e-10
+        for m, y in enumerate(b.array):
+            assert abs(y - b_exact.array[m]) < 1e-10

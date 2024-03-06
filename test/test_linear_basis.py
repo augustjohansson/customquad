@@ -20,7 +20,7 @@ import common
 @pytest.mark.parametrize("xmin", [[0, 0], [-0.25, -10.25]])
 @pytest.mark.parametrize("xmax", [[1, 1], [1.25, 17.5]])
 @pytest.mark.parametrize("fcn", [common.fcn1, common.fcn2, common.fcn3, common.fcn4])
-@pytest.mark.parametrize("use_dolfinx_mesh", [False, True])
+@pytest.mark.parametrize("use_dolfinx_mesh", [True, False])
 def test_quads_assembly(assembler, norm, N, xmin, xmax, fcn, use_dolfinx_mesh):
 
     polynomial_order = 1
@@ -54,7 +54,7 @@ def test_quads_assembly(assembler, norm, N, xmin, xmax, fcn, use_dolfinx_mesh):
 @pytest.mark.parametrize("xmin", [[0, 0, 0], [-0.25, -10.25, 0.25]])
 @pytest.mark.parametrize("xmax", [[1, 1, 1], [1.25, 17.5, 4.4]])
 @pytest.mark.parametrize("fcn", [common.fcn1, common.fcn2, common.fcn3, common.fcn4])
-@pytest.mark.parametrize("use_dolfinx_mesh", [False, True])
+@pytest.mark.parametrize("use_dolfinx_mesh", [True, False])
 def test_hexes_assembly(assembler, norm, N, xmin, xmax, fcn, use_dolfinx_mesh):
 
     polynomial_order = 1
@@ -76,71 +76,7 @@ def test_hexes_assembly(assembler, norm, N, xmin, xmax, fcn, use_dolfinx_mesh):
     assert norm(b - b_ref) / norm(b_ref) < 1e-10
 
 
-@pytest.mark.parametrize("use_dolfinx_mesh", [False, True])
-def test_edges(use_dolfinx_mesh):
-    # Integrate 2x+y over the edges of a rectangle. Find the edges
-    # using the topology of the mesh.
-
-    N = 1
-    xmin = np.array([-1.0, -1.0])
-    xmax = np.array([4.0, 1.0])
-
-    if use_dolfinx_mesh:
-        cell_type = dolfinx.mesh.CellType.quadrilateral
-        mesh = dolfinx.mesh.create_rectangle(
-            MPI.COMM_WORLD,
-            np.array([xmin, xmax]),
-            np.array([N, N]),
-            cell_type=cell_type,
-        )
-    else:
-        polynomial_order = 1
-        mesh = cq.create_mesh(
-            np.array([xmin, xmax]), np.array([N, N]), polynomial_order
-        )
-
-    num_cells = cq.utils.get_num_cells(mesh)
-    cells = np.arange(num_cells)
-
-    x = ufl.SpatialCoordinate(mesh)
-
-    def fcn(x):
-        return 2 * x[0] + x[1]
-
-    dx = ufl.dx(metadata={"quadrature_rule": "runtime"})
-    form = dolfinx.fem.form(fcn(x) * dx(domain=mesh))
-
-    # Facet nodes
-    tdim = mesh.topology.dim
-    mesh.topology.create_connectivity(tdim - 1, 0)
-    f2n = mesh.topology.connectivity(tdim - 1, 0)
-
-    cell_volume = np.prod(xmax - xmin)
-
-    midpoint = [None] * 4
-    facet_area = [None] * 4
-    qr_pts = [None] * 4
-    qr_w = [None] * 4
-    m = [None] * 4
-    m_exact = [None] * 4
-
-    for k in range(4):
-        n = f2n.links(k)
-
-        midpoint[k] = np.mean(mesh.geometry.x[n], axis=0)[0:tdim]
-        qr_pts[k] = np.expand_dims((midpoint[k] - xmin) / (xmax - xmin), axis=0)
-
-        facet_area[k] = np.linalg.norm(np.diff(mesh.geometry.x[n], axis=0))
-        qr_w[k] = np.array([[facet_area[k] / cell_volume]])
-
-        qr_data = [(cells, qr_pts[k], qr_w[k])]
-        m[k] = cq.assemble_scalar(form, qr_data)
-        m_exact[k] = fcn(midpoint[k]) * facet_area[k]
-
-        assert abs(m[k] - m_exact[k]) / m_exact[k] < 1e-10
-
-
-@pytest.mark.parametrize("use_dolfinx_mesh", [False, True])
+@pytest.mark.parametrize("use_dolfinx_mesh", [True, False])
 def test_edge_integral(use_dolfinx_mesh):
 
     # Test bdry integral with basis function

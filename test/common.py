@@ -1,3 +1,5 @@
+# Help routines for the tests
+
 import dolfinx
 import ufl
 from ufl import inner
@@ -112,7 +114,6 @@ def get_mesh():
     # Mesh
     N = 10
     cell_type = dolfinx.mesh.CellType.quadrilateral
-    # mesh = dolfinx.mesh.create_unit_square(MPI.COMM_WORLD, N, N, cell_type)
     xmin = np.array([-1.23, -11.11])
     xmax = np.array([3.33, 99.99])
     mesh = dolfinx.mesh.create_rectangle(
@@ -171,3 +172,33 @@ def get_mesh():
         uncut_cell_tag,
         outside_cell_tag,
     )
+
+
+def entities_to_geometry(mesh, dim, entity_list):
+    # See https://github.com/FEniCS/dolfinx/pull/1684
+
+    layout = mesh.geometry.cmap.create_dof_layout()
+    num_entity_dofs = layout.num_entity_closure_dofs(dim)
+    xdofs = mesh.geometry.dofmap
+
+    tdim = mesh.topology.dim
+    mesh.topology.create_entities(dim)
+    mesh.topology.create_connectivity(dim, tdim)
+    mesh.topology.create_connectivity(tdim, dim)
+    e_to_c = mesh.topology.connectivity(dim, tdim)
+    c_to_e = mesh.topology.connectivity(tdim, dim)
+
+    entity_geometry = np.empty((len(entity_list), num_entity_dofs), np.int32)
+
+    for i, idx in enumerate(entity_list):
+        cell = e_to_c.links(idx)[0]
+        cell_entities = c_to_e.links(cell)
+        pos = np.nonzero(cell_entities == idx)[0]
+        assert pos.size
+        local_entity = cell_entities[pos]
+        entity_dofs = layout.entity_closure_dofs(dim, local_entity)
+
+        xc = xdofs.links(cell)
+        entity_geometry[i] = xc[entity_dofs]
+
+    return entity_geometry
