@@ -29,7 +29,6 @@ void call_basix(double***** FE,
 							basix::element::lagrange_variant::equispaced);
 
   // Number of derivatives to obtain (0 or first order for now)
-  // FIXME Handle derivatives of higher order.
   const int nd = basix_derivative == 0 ? 0 : 1;
 
   // Compute basis and derivatives. The shape is (derivative, point,
@@ -57,23 +56,31 @@ void call_basix(double***** FE,
 
   // Permutation vector
   std::vector<int> perm(num_basis_functions);
-  for (int i = 0; i < num_basis_functions; ++i)
-    perm[i] = i;
 
-  assert(perm.size() == num_basis_functions);
+  if (cell_type == 4 and degree == 1) {
+    perm[0] = 0;
+    perm[1] = 2;
+    perm[2] = 1;
+    perm[3] = 3;
+  }
+  else {
+    for (int i = 0; i < num_basis_functions; ++i)
+      perm[i] = i;
+  }
 
   // Copy with permutation
   for (int i = 0; i < num_quadrature_points; ++i)
     for (int j = 0; j < num_basis_functions; ++j)
       (*FE)[0][0][i][j] = tab(basix_derivative, i, perm[j], 0);
 
-  bool debug_output = true;
+  bool debug_output = false;
 
   if (debug_output) {
     std::ofstream f;
     std::stringstream ss;
     ss << "/tmp/call_basix" << reinterpret_cast<void*>(FE) << ".txt";
     f.open(ss.str());
+
     f << ss.str() << '\n'
       << "num_quadrature_points " << num_quadrature_points
       << "\nbasix_derivative " << basix_derivative
@@ -83,33 +90,37 @@ void call_basix(double***** FE,
       << "\ngdim " << gdim
       << "\nnd " << nd
       << "\nnum_basis_functions " << num_basis_functions << '\n';
+
     f << "tab table copied to FE[0][0][i][j]:\n";
     for (int i = 0; i < num_quadrature_points; ++i)
       for (int j = 0; j < num_basis_functions; ++j)
 	f << i << ' ' << j << ' ' << (*FE)[0][0][i][j] << '\n';
+
     f << "I.e. the i j matrix looks like\n";
     for (int i = 0; i < num_quadrature_points; ++i) {
       for (int j = 0; j < num_basis_functions; ++j)
 	f << (*FE)[0][0][i][j] << ' ';
       f << '\n';
     }
+
     f << "quadrature points:\n";
     for (int i = 0; i < num_quadrature_points; ++i)
       for (int d = 0; d < gdim; ++d)
 	f << quadrature_points[gdim*i+d] << ' ';
     f << '\n';
+
     f << "tab shape: ";
     for (auto s: shape)
-      f << s <<' ';
+      f << s << ' ';
     f << '\n';
 
     f << "tab:\n";
-    for (std::size_t i = 0; i != tab.extent(0); ++i){
-      f << "i "<<i << '\n';
-      for (std::size_t j = 0; j != tab.extent(1); ++j){
-	for (std::size_t k = 0; k != tab.extent(2); ++k){
+    for (std::size_t i = 0; i != tab.extent(0); ++i) {
+      f << "i " << i << '\n';
+      for (std::size_t j = 0; j != tab.extent(1); ++j) {
+	for (std::size_t k = 0; k != tab.extent(2); ++k) {
 	  for (std::size_t l = 0; l != tab.extent(3); ++l)
-	    f << tab(i,j,k,l)<<' ';
+	    f << tab(i,j,k,l) << ' ';
 	  f<< '\n';
 	}
 	f << '\n';
