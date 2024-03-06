@@ -148,6 +148,7 @@ def get_celltags(
     values[uncut_cells] = uncut_cell_tag
     values[cut_cells] = cut_cell_tag
     mt = dolfinx.mesh.meshtags(mesh, tdim, cells, values)
+    mt.name = "celltags"
 
     return mt
 
@@ -178,6 +179,7 @@ def get_facetags(mesh, cut_cells, outside_cells, ghost_penalty_tag=1):
     values = np.full(faces.shape, init_tag, dtype=np.intc)
     values[gp_faces] = ghost_penalty_tag
     mt = dolfinx.mesh.meshtags(mesh, tdim - 1, faces, values)
+    mt.name = "facetags"
 
     return mt
 
