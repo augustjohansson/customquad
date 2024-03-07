@@ -1,6 +1,7 @@
 import numpy as np
 import cppyy
 import cppyy.ll
+import dolfinx
 
 cppyy.ll.set_signals_as_exception(True)
 
@@ -101,7 +102,7 @@ def generate_qr(mesh, NN, degree, domain, opts=[]):
     elif domain == "sphere":
         hppfile = "sphere.hpp"
     else:
-        RuntimeError("unknown domain", domain)
+        raise RuntimeError("Unknown domain", domain)
 
     cppyy.include(hppfile)
     do_map = True
@@ -126,6 +127,8 @@ def generate_qr(mesh, NN, degree, domain, opts=[]):
     dofmap = mesh.geometry.dofmap
     x = mesh.geometry.x
     cell_coords = np.zeros((num_loc_vertices, gdim))
+    t = dolfinx.common.Timer()
+
     for cell in range(num_cells):
         dofs = dofmap.links(cell)
         for j in range(num_loc_vertices):
@@ -137,9 +140,13 @@ def generate_qr(mesh, NN, degree, domain, opts=[]):
         if gdim == 3:
             LLz[cell] = min(cell_coords[:, 2])
             URz[cell] = max(cell_coords[:, 2])
+    print("Getting cell sizes for algoim took", t.elapsed()[0])
 
+    t = dolfinx.common.Timer()
     cppyy.gbl.run(LLx, LLy, LLz, URx, URy, URz, degree, do_verbose, do_map, do_scale)
+    print("Algoim call took", t.elapsed()[0])
 
+    t = dolfinx.common.Timer()
     qr_pts = create_list_of_arrays(cppyy.gbl.get_qr_pts())
     qr_w = create_list_of_arrays(cppyy.gbl.get_qr_w())
     qr_pts_bdry = create_list_of_arrays(cppyy.gbl.get_qr_pts_bdry())
@@ -151,7 +158,9 @@ def generate_qr(mesh, NN, degree, domain, opts=[]):
     cut_cells = create_int_array(cppyy.gbl.get_cut_cells())
     uncut_cells = create_int_array(cppyy.gbl.get_uncut_cells())
     outside_cells = create_int_array(cppyy.gbl.get_outside_cells())
+    print("Converting C arrays took", t.elapsed()[0])
 
+    t = dolfinx.common.Timer()
     check_status(
         mesh,
         cut_cells,
@@ -165,6 +174,7 @@ def generate_qr(mesh, NN, degree, domain, opts=[]):
         xyz,
         xyz_bdry,
     )
+    print("Checking status of qr took", t.elapsed()[0])
 
     return (
         cut_cells,
