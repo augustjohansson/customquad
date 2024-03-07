@@ -21,6 +21,7 @@ parser.add_argument("-p", type=int, default=1)
 parser.add_argument("-order", type=int, default=1)
 parser.add_argument("-verbose", action="store_true")
 parser.add_argument("-solver", type=str, default="mumps")
+parser.add_argument("-gamma", type=float, default=0.5)
 args = parser.parse_args()
 print("arguments:")
 for arg in vars(args):
@@ -193,7 +194,7 @@ facetags = cq.utils.get_facetags(
 )
 
 # Write mesh with tags
-with dolfinx.io.XDMFFile(mesh.comm, "output/msh.xdmf", "w") as xdmf:
+with dolfinx.io.XDMFFile(mesh.comm, f"output/msh{args.N}.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_meshtags(celltags)
     xdmf.write_meshtags(facetags)
@@ -253,10 +254,12 @@ a_bdry = (
     -inner(dot(n, grad(u)), v) - inner(u, dot(n, grad(v))) + inner(betaN / h * u, v)
 )
 L_bdry = -inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
-a_stab = betas * avg(h) * inner(jump(n, grad(u)), jump(n, grad(v)))
+a_stab = betas * avg(h) ** (2 * args.gamma) * inner(jump(n, grad(u)), jump(n, grad(v)))
 if args.p == 2:
     a_stab += (
-        betas * avg(h) ** 1 * inner(jump(n, grad(grad(u))), jump(n, grad(grad(v))))
+        betas
+        * avg(h) ** (2 * args.gamma)
+        * inner(jump(n, grad(grad(u))), jump(n, grad(grad(v))))
     )
 
 # Standard measures
