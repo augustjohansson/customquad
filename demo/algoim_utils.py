@@ -47,8 +47,8 @@ def check_status(
             pmin = np.min(p, axis=0)
             pmax = np.max(p, axis=0)
             for d in range(gdim):
-                assert pmin[d] >= xmin[d], print("min fail", c, pmin[d], xmin[d])
-                assert pmax[d] <= xmax[d], print("max fail", c, pmax[d], xmax[d])
+                assert pmin[d] >= xmin[d], f"min fail {c}: {pmin[d]}, {xmin[d]}"
+                assert pmax[d] <= xmax[d], f"max fail {c}: {pmax[d]}, {xmax[d]}"
 
 
 cppyy.cppdef(
@@ -83,10 +83,7 @@ def create_int_array(vec):
 
 
 def create_list_of_arrays(v):
-    w = [None] * len(v)
-    for i in range(len(v)):
-        w[i] = create_double_array(v[i])
-    return w
+    return [create_double_array(v_i) for v_i in v]
 
 
 # Main function
@@ -95,9 +92,8 @@ def generate_qr(mesh, NN, degree, domain, opts=[]):
     Gaussian quadrature scheme and must satisfy 1 <= qo && qo <= 10.
     """
     cppyy.add_include_path("/usr/local/include/algoim/algoim")
-    if domain == "square":
-        hppfile = "square.hpp"
-    elif domain == "circle":
+
+    if domain == "circle":
         hppfile = "circle.hpp"
     elif domain == "sphere":
         hppfile = "sphere.hpp"
@@ -105,6 +101,8 @@ def generate_qr(mesh, NN, degree, domain, opts=[]):
         raise RuntimeError("Unknown domain", domain)
 
     cppyy.include(hppfile)
+    cppyy.include("algoim_utils.hpp")
+
     do_map = True
     do_scale = True
 
@@ -116,48 +114,50 @@ def generate_qr(mesh, NN, degree, domain, opts=[]):
     gdim = mesh.geometry.dim
     num_cells = np.prod(NN)
     assert mesh.topology.index_map(gdim).size_local == num_cells
-    LLx = np.zeros(num_cells)
-    LLy = np.zeros(num_cells)
-    LLz = np.zeros(num_cells)
-    URx = np.zeros(num_cells)
-    URy = np.zeros(num_cells)
-    URz = np.zeros(num_cells)
 
-    num_loc_vertices = 2**gdim
-    dofmap = mesh.geometry.dofmap
-    x = mesh.geometry.x
-    cell_coords = np.zeros((num_loc_vertices, gdim))
     t = dolfinx.common.Timer()
-
-    for cell in range(num_cells):
-        dofs = dofmap.links(cell)
-        for j in range(num_loc_vertices):
-            cell_coords[j] = x[dofs[j], 0:gdim]
-        LLx[cell] = min(cell_coords[:, 0])
-        LLy[cell] = min(cell_coords[:, 1])
-        URx[cell] = max(cell_coords[:, 0])
-        URy[cell] = max(cell_coords[:, 1])
-        if gdim == 3:
-            LLz[cell] = min(cell_coords[:, 2])
-            URz[cell] = max(cell_coords[:, 2])
+    dofs = mesh.geometry.dofmap.array.reshape((num_cells, -1))
+    cell_coords = mesh.geometry.x[dofs]
+    bbxmin = np.min(cell_coords, axis=1)
+    bbxmax = np.max(cell_coords, axis=1)
+    LLx = bbxmin[:, 0]
+    LLy = bbxmin[:, 1]
+    URx = bbxmax[:, 0]
+    URy = bbxmax[:, 1]
+    if gdim == 3:
+        LLz = bbxmin[:, 2]
+        URz = bbxmax[:, 2]
+    else:
+        LLz = np.zeros(num_cells)
+        URz = np.zeros(num_cells)
     print("Getting cell sizes for algoim took", t.elapsed()[0])
 
     t = dolfinx.common.Timer()
-    cppyy.gbl.run(LLx, LLy, LLz, URx, URy, URz, degree, do_verbose, do_map, do_scale)
+    cppyy.gbl.run(
+        LLx.copy(),
+        LLy.copy(),
+        LLz.copy(),
+        URx.copy(),
+        URy.copy(),
+        URz.copy(),
+        degree,
+        do_verbose,
+        do_map,
+        do_scale,
+    )
     print("Algoim call took", t.elapsed()[0])
 
     t = dolfinx.common.Timer()
-    qr_pts = create_list_of_arrays(cppyy.gbl.get_qr_pts())
-    qr_w = create_list_of_arrays(cppyy.gbl.get_qr_w())
-    qr_pts_bdry = create_list_of_arrays(cppyy.gbl.get_qr_pts_bdry())
-    qr_w_bdry = create_list_of_arrays(cppyy.gbl.get_qr_w_bdry())
-    qr_n = create_list_of_arrays(cppyy.gbl.get_qr_n())
-    xyz = create_list_of_arrays(cppyy.gbl.get_xyz())
-    xyz_bdry = create_list_of_arrays(cppyy.gbl.get_xyz_bdry())
-
-    cut_cells = create_int_array(cppyy.gbl.get_cut_cells())
-    uncut_cells = create_int_array(cppyy.gbl.get_uncut_cells())
-    outside_cells = create_int_array(cppyy.gbl.get_outside_cells())
+    qr_pts = create_list_of_arrays(cppyy.gbl.algoim_utils.qr_pts)
+    qr_w = create_list_of_arrays(cppyy.gbl.algoim_utils.qr_w)
+    qr_pts_bdry = create_list_of_arrays(cppyy.gbl.algoim_utils.qr_pts_bdry)
+    qr_w_bdry = create_list_of_arrays(cppyy.gbl.algoim_utils.qr_w_bdry)
+    qr_n = create_list_of_arrays(cppyy.gbl.algoim_utils.qr_n)
+    xyz = create_list_of_arrays(cppyy.gbl.algoim_utils.xyz)
+    xyz_bdry = create_list_of_arrays(cppyy.gbl.algoim_utils.xyz_bdry)
+    cut_cells = create_int_array(cppyy.gbl.algoim_utils.cut_cells)
+    uncut_cells = create_int_array(cppyy.gbl.algoim_utils.uncut_cells)
+    outside_cells = create_int_array(cppyy.gbl.algoim_utils.outside_cells)
     print("Converting C arrays took", t.elapsed()[0])
 
     t = dolfinx.common.Timer()

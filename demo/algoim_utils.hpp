@@ -6,6 +6,16 @@
 namespace algoim_utils
 {
 
+  std::vector<int> cut_cells;
+  std::vector<int> uncut_cells;
+  std::vector<int> outside_cells;
+  std::vector<std::vector<double>> qr_pts;
+  std::vector<std::vector<double>> qr_w;
+  std::vector<std::vector<double>> qr_pts_bdry;
+  std::vector<std::vector<double>> qr_w_bdry;
+  std::vector<std::vector<double>> qr_n;
+  std::vector<std::vector<double>> xyz, xyz_bdry;
+
   template <class T>
   void convert(const T& qr,
 	       const int gdim,
@@ -21,7 +31,7 @@ namespace algoim_utils
       w[i] = qr.nodes[i].w;
     }
   }
-  
+
   template<class Y, int gdim>
   void run_template(const Y& phi,
 		    const std::vector<double>& LLx,
@@ -33,17 +43,7 @@ namespace algoim_utils
 		    int degree,
 		    bool do_verbose,
 		    bool do_map,
-		    bool do_scale,
-		    std::vector<int>& cut_cells,
-		    std::vector<int>& uncut_cells,
-		    std::vector<int>& outside_cells,
-		    std::vector<std::vector<double>>& qr_pts,
-		    std::vector<std::vector<double>>& qr_w,
-		    std::vector<std::vector<double>>& qr_pts_bdry,
-		    std::vector<std::vector<double>>& qr_w_bdry,
-		    std::vector<std::vector<double>>& qr_n,
-		    std::vector<std::vector<double>>& xyz,
-		    std::vector<std::vector<double>>& xyz_bdry)
+		    bool do_scale)
   {
     std::cout << __FILE__ << ' ' << __FUNCTION__ << std::endl;
 
@@ -91,10 +91,10 @@ namespace algoim_utils
 	xmin(2) = LLz[cell_no];
 	xmax(2) = URz[cell_no];
       }
-    
+
       const auto q_bdry = algoim::quadGen<gdim>
 	(phi, algoim::HyperRectangle<double, gdim>(xmin, xmax), gdim, side, degree);
-    
+
       if (q_bdry.nodes.size()) {
 	// Cut cell
 	cut_cells.push_back(cell_no);
@@ -123,7 +123,7 @@ namespace algoim_utils
 	double vol = 1;
 	for (std::size_t d = 0; d < gdim; ++d)
 	  vol *= dx(d);
-      
+
 	if (do_scale) {
 	  for (double& w: qr_w[cell_no])
 	    w /= vol;
