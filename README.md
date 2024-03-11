@@ -28,6 +28,15 @@ rules. It is found at
 
 ## Installation (non-dev)
 
+In short, the following four steps is recommended to install the
+library:
+```
+docker build -f docker/Dockerfile -t customquad .
+docker run -it -v `pwd`:/root customquad bash -i
+pip3 install . -U
+export CC="/usr/lib/ccache/g++ -fpermissive"
+```
+
 Please use the provided docker file based on the dolfinx docker
 image. The docker file may be built and run from the main directory as
 ```
