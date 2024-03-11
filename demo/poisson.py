@@ -86,7 +86,7 @@ def u_exact(backend):
 
 
 # Mesh
-NN = np.array([args.N] * gdim, dtype=np.int32)
+# NN = np.array([args.N] * gdim, dtype=np.int32)
 # if args.p == 1:
 #     if gdim == 2:
 #         cell_type = dolfinx.mesh.CellType.quadrilateral
@@ -104,46 +104,14 @@ NN = np.array([args.N] * gdim, dtype=np.int32)
 #         mesh = cq.create_high_order_hex_mesh(np.array([xmin, xmax]), NN, args.p)
 #     assert mesh.geometry.dim == gdim
 
-
-# cell_type = dolfinx.mesh.CellType.quadrilateral
-# mesh_org = dolfinx.mesh.create_rectangle(
-#     MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type
-# )
-
-# cell_type = dolfinx.mesh.CellType.quadrilateral
-# mesh_generator = dolfinx.mesh.create_rectangle
-# mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
-
-# debug = True
-# if gdim == 2:
-#     mesh = cq.create_high_order_quad_mesh(np.array([xmin, xmax]), NN, args.p, debug)
-# else:
-#     mesh = cq.create_high_order_hex_mesh(np.array([xmin, xmax]), NN, args.p, debug)
-
+t = dolfinx.common.Timer()
 mesh = cq.create_mesh(np.array([xmin, xmax]), NN, args.p, args.verbose)
-
-# breakpoint()
+print("Generating mesh took", t.elapsed()[0])
 
 if args.verbose:
     print(f"{NN=}")
     print(f"{xmin=}")
     print(f"{xmax=}")
-
-# V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", args.p))
-# dofs, num_loc_dofs = cq.utils.get_dofs(V)
-# print(dofs.shape)
-# print(args.N * args.N)
-
-# for k in range(dofs.shape[0]):
-#     locdofs = dofs[k, :]
-#     x = mesh.geometry.x[locdofs, 0:gdim]
-#     xmin = np.min(x, axis=0)
-#     xmax = np.max(x, axis=0)
-#     vol = np.prod(xmax - xmin)
-#     print(k, vol)
-
-# breakpoint()
-
 
 # Generate qr
 algoim_opts = {"verbose": args.verbose}
@@ -166,14 +134,6 @@ print("num cells", cq.utils.get_num_cells(mesh))
 print("num cut_cells", len(cut_cells))
 print("num uncut_cells", len(uncut_cells))
 print("num outside_cells", len(outside_cells))
-
-# # Algoim creates (at the moment) quadrature rules for _all_ cells, not
-# # only the cut cells. Remove these empty entries
-# qr_pts = [qr_pts0[k] for k in cut_cells]
-# qr_w = [qr_w0[k] for k in cut_cells]
-# qr_pts_bdry = [qr_pts_bdry0[k] for k in cut_cells]
-# qr_w_bdry = [qr_w_bdry0[k] for k in cut_cells]
-# qr_n = [qr_n0[k] for k in cut_cells]
 
 # Set up cell tags and face tags
 uncut_cell_tag = 1
@@ -210,34 +170,6 @@ if args.p == 1:
     h = ufl.CellDiameter(mesh)
 else:
     h = max((xmax - xmin) / args.N)
-
-# print(V.tabulate_dof_coordinates())
-# dofs, _ = cq.utils.get_dofs(V)
-# print(dofs)
-# breakpoint()
-
-
-# # debug
-# dofcoords = V.tabulate_dof_coordinates()
-# dofs, _ = cq.utils.get_dofs(V)
-# np.savetxt("dofcoords.txt", dofcoords)
-# np.savetxt("dofs.txt", dofs)
-
-# with open("xyz.txt", "w") as f:
-#     for xx in xyz:
-#         if len(xx):
-#             m = len(xx)
-#             np.savetxt(f, xx.reshape((m // 2, -1)))
-# with open("xyz_bdry.txt", "w") as f:
-#     for xx in xyz_bdry:
-#         if len(xx):
-#             m = len(xx)
-#             np.savetxt(f, xx.reshape((m // 2, -1)))
-
-# """
-
-# """
-
 
 # Setup boundary traction and rhs
 g.interpolate(u_exact(np))
@@ -476,7 +408,5 @@ conv = np.array(
 )
 
 print(conv)
-
-# np.savetxt("output/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
 
 np.savetxt(outputdir + "/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
