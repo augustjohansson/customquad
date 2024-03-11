@@ -152,11 +152,11 @@ t = dolfinx.common.Timer()
     cut_cells,
     uncut_cells,
     outside_cells,
-    qr_pts0,
-    qr_w0,
-    qr_pts_bdry0,
-    qr_w_bdry0,
-    qr_n0,
+    qr_pts,
+    qr_w,
+    qr_pts_bdry,
+    qr_w_bdry,
+    qr_n,
     xyz,
     xyz_bdry,
 ] = algoim_utils.generate_qr(mesh, NN, args.order, args.domain, algoim_opts)
@@ -167,13 +167,13 @@ print("num cut_cells", len(cut_cells))
 print("num uncut_cells", len(uncut_cells))
 print("num outside_cells", len(outside_cells))
 
-# Algoim creates (at the moment) quadrature rules for _all_ cells, not
-# only the cut cells. Remove these empty entries
-qr_pts = [qr_pts0[k] for k in cut_cells]
-qr_w = [qr_w0[k] for k in cut_cells]
-qr_pts_bdry = [qr_pts_bdry0[k] for k in cut_cells]
-qr_w_bdry = [qr_w_bdry0[k] for k in cut_cells]
-qr_n = [qr_n0[k] for k in cut_cells]
+# # Algoim creates (at the moment) quadrature rules for _all_ cells, not
+# # only the cut cells. Remove these empty entries
+# qr_pts = [qr_pts0[k] for k in cut_cells]
+# qr_w = [qr_w0[k] for k in cut_cells]
+# qr_pts_bdry = [qr_pts_bdry0[k] for k in cut_cells]
+# qr_w_bdry = [qr_w_bdry0[k] for k in cut_cells]
+# qr_n = [qr_n0[k] for k in cut_cells]
 
 # Set up cell tags and face tags
 uncut_cell_tag = 1
@@ -288,7 +288,6 @@ ds_cut = ufl.dx(
 qr_bulk = [(cut_cells, qr_pts, qr_w)]
 qr_bdry = [(cut_cells, qr_pts_bdry, qr_w_bdry, qr_n)]
 
-# FIXME make sure we can assemble over many forms
 form1 = dolfinx.fem.form(a_bulk * dx_cut)
 form2 = dolfinx.fem.form(a_bdry * ds_cut(cut_cell_tag))
 
@@ -381,6 +380,8 @@ elif args.solver == "cg":
 else:
     RuntimeError("Unknown solver", args.solver)
 
+if args.verbose:
+    cg.utils.dump("output/vec.txt", vec)
 
 uh = dolfinx.fem.Function(V)
 uh.vector.setArray(vec.array)
@@ -425,7 +426,12 @@ print("qr area error", area_err)
 
 # Evaluate solution in qr to see that there aren't any spikes
 bb_tree = dolfinx.geometry.BoundingBoxTree(mesh, gdim)
-flatten = lambda l: [item for sublist in l for item in sublist]
+
+
+def flatten(lst):
+    return [item for sublist in lst for item in sublist]
+
+
 pts = np.reshape(flatten(xyz), (-1, gdim))
 pts_bdry = np.reshape(flatten(xyz_bdry), (-1, gdim))
 pts_bulk = dolfinx.mesh.compute_midpoints(mesh, gdim, uncut_cells)
