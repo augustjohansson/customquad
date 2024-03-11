@@ -86,7 +86,7 @@ def u_exact(backend):
 
 
 # Mesh
-# NN = np.array([args.N] * gdim, dtype=np.int32)
+NN = np.array([args.N] * gdim, dtype=np.int32)
 # if args.p == 1:
 #     if gdim == 2:
 #         cell_type = dolfinx.mesh.CellType.quadrilateral
