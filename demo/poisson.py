@@ -52,7 +52,7 @@ def write(filename, mesh, data):
         elif isinstance(data, dolfinx.fem.Function):
             xdmffile.write_function(data)
         else:
-            breakpoint()
+            raise RuntimeError("Trying to write unsupported data")
 
 
 # Domain
@@ -140,6 +140,7 @@ uncut_cell_tag = 1
 cut_cell_tag = 2
 outside_cell_tag = 3
 ghost_penalty_tag = 4
+t = dolfinx.common.Timer()
 celltags = cq.utils.get_celltags(
     mesh,
     cut_cells,
@@ -149,15 +150,51 @@ celltags = cq.utils.get_celltags(
     cut_cell_tag=cut_cell_tag,
     outside_cell_tag=outside_cell_tag,
 )
+print("Generating cell tags took", t.elapsed()[0])
+t = dolfinx.common.Timer()
 facetags = cq.utils.get_facetags(
     mesh, cut_cells, outside_cells, ghost_penalty_tag=ghost_penalty_tag
 )
+print("Generating face tags took", t.elapsed()[0])
 
 # Write mesh with tags
 with dolfinx.io.XDMFFile(mesh.comm, f"output/msh{args.N}.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_meshtags(celltags)
     xdmf.write_meshtags(facetags)
+
+# Check functional assembly
+ds_cut = ufl.dx(
+    subdomain_data=celltags, metadata={"quadrature_rule": "runtime"}, domain=mesh
+)
+dx_cut = ufl.dx(metadata={"quadrature_rule": "runtime"}, domain=mesh)
+dx_uncut = ufl.dx(subdomain_data=celltags, domain=mesh)
+
+
+def assemble(integrand):
+    m_cut = cq.assemble_scalar(dolfinx.fem.form(integrand * dx_cut), qr_bulk)
+    m_uncut = dolfinx.fem.assemble_scalar(
+        dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
+    )
+    return m_cut + m_uncut
+
+
+qr_bulk = [(cut_cells, qr_pts, qr_w)]
+qr_bdry = [(cut_cells, qr_pts_bdry, qr_w_bdry, qr_n)]
+area_func = cq.assemble_scalar(dolfinx.fem.form(1.0 * ds_cut(cut_cell_tag)), qr_bdry)
+volume_func = assemble(1.0)
+ve = abs(volume_exact - volume_func) / volume_exact
+ae = abs(area_exact - area_func) / area_exact
+print("functional volume error", ve)
+print("functional area error", ae)
+
+# Geometry errors
+volume = cq.utils.volume(xmin, xmax, NN, uncut_cells, qr_w)
+area = cq.utils.area(xmin, xmax, NN, qr_w_bdry)
+volume_err = abs(volume_exact - volume) / volume_exact
+area_err = abs(area_exact - area) / area_exact
+print("qr volume error", volume_err)
+print("qr area error", area_err)
 
 # FEM
 V = dolfinx.fem.FunctionSpace(mesh, ("Lagrange", args.p))
@@ -195,7 +232,6 @@ if args.p == 2:
     )
 
 # Standard measures
-dx_uncut = ufl.dx(subdomain_data=celltags, domain=mesh)
 dS = ufl.dS(subdomain_data=facetags, domain=mesh)
 
 # Integration using standard assembler (uncut cells, ghost penalty
@@ -204,37 +240,28 @@ ax = dolfinx.fem.form(
     a_bulk * dx_uncut(uncut_cell_tag) + a_stab * dS(ghost_penalty_tag)
 )
 t = dolfinx.common.Timer()
-Ax = dolfinx.fem.petsc.assemble_matrix(ax)
-Ax.assemble()
+A = dolfinx.fem.petsc.assemble_matrix(ax)
+A.assemble()
 print("Assemble interior took", t.elapsed()[0])
 Lx = dolfinx.fem.form(L_bulk * dx_uncut(uncut_cell_tag))
 bx = dolfinx.fem.petsc.assemble_vector(Lx)
 
 # Integration using custom assembler (i.e. integrals over cut cells,
 # both cut bulk part and bdry part)
-dx_cut = ufl.dx(metadata={"quadrature_rule": "runtime"}, domain=mesh)
-ds_cut = ufl.dx(
-    subdomain_data=celltags, metadata={"quadrature_rule": "runtime"}, domain=mesh
-)
-
-qr_bulk = [(cut_cells, qr_pts, qr_w)]
-qr_bdry = [(cut_cells, qr_pts_bdry, qr_w_bdry, qr_n)]
-
-form1 = dolfinx.fem.form(a_bulk * dx_cut)
-form2 = dolfinx.fem.form(a_bdry * ds_cut(cut_cell_tag))
+form_cut_bulk = dolfinx.fem.form(a_bulk * dx_cut)
+form_cut_bdry = dolfinx.fem.form(a_bdry * ds_cut(cut_cell_tag))
 
 t = dolfinx.common.Timer()
-Ac1 = cq.assemble_matrix(form1, qr_bulk)
+Ac1 = cq.assemble_matrix(form_cut_bulk, qr_bulk)
 Ac1.assemble()
 print("Runtime assemble bulk took", t.elapsed()[0])
 
 t = dolfinx.common.Timer()
-Ac2 = cq.assemble_matrix(form2, qr_bdry)
+Ac2 = cq.assemble_matrix(form_cut_bdry, qr_bdry)
 Ac2.assemble()
 print("Runtime assemble bdry took", t.elapsed()[0])
 
 t = dolfinx.common.Timer()
-A = Ax
 A += Ac1
 A += Ac2
 print("Matrix += took", t.elapsed()[0])
@@ -278,10 +305,7 @@ def mumps(A, b):
     ksp.getPC().setType("lu")
     ksp.getPC().setFactorSolverType("mumps")
     vec = b.copy()
-    t = dolfinx.common.Timer()
     ksp.solve(b, vec)
-    print("Solve took", t.elapsed()[0])
-    print("Matrix size", len(b.array))
     vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     return vec
 
@@ -296,21 +320,24 @@ def cg(A, b):
     ksp.setFromOptions()
     ksp.setOperators(A)
     vec = b.copy()
-    t = dolfinx.common.Timer()
+    # ksp.setMonitor(
+    #     lambda _, its, rnorm: print(f"Iteration: {its}, rel. residual: {rnorm}")
+    # )
     ksp.solve(b, vec)
-    print("Solve took", t.elapsed()[0])
-    print("Matrix size", len(b.array))
     vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     return vec
 
 
 # Solve
+t = dolfinx.common.Timer()
 if args.solver == "mumps":
     vec = mumps(A, b)
 elif args.solver == "cg":
     vec = cg(A, b)
 else:
-    RuntimeError("Unknown solver", args.solver)
+    raise RuntimeError("Unknown solver", args.solver)
+print(f"Solver {args.solver} solve took", t.elapsed()[0])
+print("Matrix size", len(vec.array))
 
 if args.verbose:
     cg.utils.dump("output/vec.txt", vec)
@@ -318,52 +345,29 @@ if args.verbose:
 uh = dolfinx.fem.Function(V)
 uh.vector.setArray(vec.array)
 uh.name = "uh"
-
 write(outputdir + "/poisson" + str(args.N) + ".xdmf", mesh, uh)
 assert np.isfinite(vec.array).all()
 assert np.isfinite(uh.vector.array).all()
 
 
-def assemble(integrand):
-    m_cut = cq.assemble_scalar(dolfinx.fem.form(integrand * dx_cut), qr_bulk)
-    m_uncut = dolfinx.fem.assemble_scalar(
-        dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
-    )
-    return m_cut + m_uncut
-
-
 # L2 errors: beware of cancellation
+t = dolfinx.common.Timer()
 L2_integrand = (uh - u_exact(ufl)(x)) ** 2
 L2_err = np.sqrt(assemble(L2_integrand))
+print("Computing L2 errors took", t.elapsed()[0])
 
 # H10 errors
+t = dolfinx.common.Timer()
 H10_integrand = (grad(uh) - grad(u_exact(ufl)(x))) ** 2
 H10_err = np.sqrt(assemble(H10_integrand))
-
-# Check functional assembly
-area_func = cq.assemble_scalar(dolfinx.fem.form(1.0 * ds_cut(cut_cell_tag)), qr_bdry)
-volume_func = assemble(1.0)
-ve = abs(volume_exact - volume_func) / volume_exact
-ae = abs(area_exact - area_func) / area_exact
-print("functional volume error", ve)
-print("functional area error", ae)
-
-# Geometry errors
-volume = cq.utils.volume(xmin, xmax, NN, uncut_cells, qr_w)
-area = cq.utils.area(xmin, xmax, NN, qr_w_bdry)
-volume_err = abs(volume_exact - volume) / volume_exact
-area_err = abs(area_exact - area) / area_exact
-print("qr volume error", volume_err)
-print("qr area error", area_err)
-
-# Evaluate solution in qr to see that there aren't any spikes
-bb_tree = dolfinx.geometry.BoundingBoxTree(mesh, gdim)
+print("Computing H10 errors took", t.elapsed()[0])
 
 
 def flatten(lst):
     return [item for sublist in lst for item in sublist]
 
 
+# Evaluate solution in qr to see that there aren't any spikes
 pts = np.reshape(flatten(xyz), (-1, gdim))
 pts_bdry = np.reshape(flatten(xyz_bdry), (-1, gdim))
 pts_bulk = dolfinx.mesh.compute_midpoints(mesh, gdim, uncut_cells)
@@ -373,6 +377,7 @@ if gdim == 2:
     # Pad with zero column
     pts = np.hstack((pts, np.zeros((pts.shape[0], 1))))
 
+bb_tree = dolfinx.geometry.BoundingBoxTree(mesh, gdim)
 cell_candidates = dolfinx.cpp.geometry.compute_collisions(bb_tree, pts)
 cells = dolfinx.cpp.geometry.compute_colliding_cells(mesh, cell_candidates, pts)
 uh_vals = uh.eval(pts, cells.array).flatten()
