@@ -159,23 +159,30 @@ def get_facetags(mesh, cut_cells, outside_cells, ghost_penalty_tag=1):
     else:
         init_tag = ghost_penalty_tag - 1
     tdim = mesh.topology.dim
-    num_faces = get_num_faces(mesh)
-    faces = np.arange(0, num_faces)
 
     # Find ghost penalty faces as all faces shared by a cut cell and
     # not an outside cell
     mesh.topology.create_connectivity(tdim - 1, tdim)
-    face_2_cells = mesh.topology.connectivity(tdim - 1, tdim)
+    f2c = mesh.topology.connectivity(tdim - 1, tdim)
+    diffs = np.diff(f2c.offsets)
+    faces = np.where(diffs == 2)[0]
+    cells = np.array([f2c.links(f) for f in faces])
+    left_cells = cells[:, 0]
+    right_cells = cells[:, 1]
+    num_cells = get_num_cells(mesh)
+    out = np.full(num_cells, False)
+    cut = np.full(num_cells, False)
+    out[outside_cells] = True
+    cut[cut_cells] = True
     gp_faces = []
-    for f in faces:
-        local_cells = face_2_cells.links(f)
-        if len(local_cells) == 2:
-            if (
-                local_cells[0] in cut_cells and not local_cells[1] in outside_cells
-            ) or (local_cells[1] in cut_cells and not local_cells[0] in outside_cells):
-                gp_faces.append(f)
+
+    for f, left, right in zip(faces, left_cells, right_cells):
+        if (cut[left] and not out[right]) or (cut[right] and not out[left]):
+            gp_faces.append(f)
 
     # Setup face tags using values
+    num_faces = get_num_faces(mesh)
+    faces = np.arange(0, num_faces)
     values = np.full(faces.shape, init_tag, dtype=np.intc)
     values[gp_faces] = ghost_penalty_tag
     mt = dolfinx.mesh.meshtags(mesh, tdim - 1, faces, values)
