@@ -136,14 +136,4 @@ def create_mesh(xrange, N, degree, debug=False):
 
     gmsh.finalize()
 
-    if debug:
-        import customquad as cq
-
-        vertices, coords, _ = cq.utils.get_vertices(mesh)
-        print(f"{vertices=}")
-        print(f"{coords=}")
-
-        mesh.topology.create_connectivity(dim, 0)
-        print(mesh.topology.connectivity(dim, 0))
-
     return mesh
