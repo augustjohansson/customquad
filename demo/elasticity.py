@@ -1,3 +1,4 @@
+import os
 from contextlib import ExitStack
 import argparse
 import dolfinx
@@ -73,7 +74,7 @@ def write(filename, mesh, data):
         elif isinstance(data, dolfinx.fem.Function):
             xdmffile.write_function(data)
         else:
-            breakpoint()
+            raise RuntimeError("Unsupported data when writing file", filename)
 
 
 # Domain
@@ -90,10 +91,9 @@ elif args.domain == "sphere":
     area_exact = 4 * np.pi
 
 else:
-    RuntimeError("Unknown domain", args.domain)
+    raise RuntimeError("Unknown domain", args.domain)
 
 gdim = len(xmin)
-
 
 # Mesh
 NN = np.array([args.N] * gdim, dtype=np.int32)
@@ -109,8 +109,7 @@ NN = np.array([args.N] * gdim, dtype=np.int32)
 # mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
 # assert mesh.geometry.dim == gdim
 
-debug = False
-mesh = cq.create_high_order_quad_mesh(np.array([xmin, xmax]), NN, args.p, debug)
+mesh = cq.create_mesh(np.array([xmin, xmax]), NN, args.p, args.verbose)
 
 # Generate qr
 algoim_opts = {"verbose": args.verbose}
@@ -119,11 +118,11 @@ t = dolfinx.common.Timer()
     cut_cells,
     uncut_cells,
     outside_cells,
-    qr_pts0,
-    qr_w0,
-    qr_pts_bdry0,
-    qr_w_bdry0,
-    qr_n0,
+    qr_pts,
+    qr_w,
+    qr_pts_bdry,
+    qr_w_bdry,
+    qr_n,
     xyz,
     xyz_bdry,
 ] = algoim_utils.generate_qr(mesh, NN, args.order, args.domain, algoim_opts)
@@ -133,14 +132,6 @@ print("num cells", cq.utils.get_num_cells(mesh))
 print("num cut_cells", len(cut_cells))
 print("num uncut_cells", len(uncut_cells))
 print("num outside_cells", len(outside_cells))
-
-# Algoim creates (at the moment) quadrature rules for _all_ cells, not
-# only the cut cells. Remove these empty entries
-qr_pts = [qr_pts0[k] for k in cut_cells]
-qr_w = [qr_w0[k] for k in cut_cells]
-qr_pts_bdry = [qr_pts_bdry0[k] for k in cut_cells]
-qr_w_bdry = [qr_w_bdry0[k] for k in cut_cells]
-qr_n = [qr_n0[k] for k in cut_cells]
 
 # Set up cell tags and face tags
 uncut_cell_tag = 1
@@ -160,8 +151,12 @@ facetags = cq.utils.get_facetags(
     mesh, cut_cells, outside_cells, ghost_penalty_tag=ghost_penalty_tag
 )
 
-# Write cell tags
-write("output/celltags" + str(args.N) + ".xdmf", mesh, celltags)
+# Write mesh with tags
+os.makedirs("output", exist_ok=True)
+with dolfinx.io.XDMFFile(mesh.comm, f"output/msh{args.N}.xdmf", "w") as xdmf:
+    xdmf.write_mesh(mesh)
+    xdmf.write_meshtags(celltags)
+    xdmf.write_meshtags(facetags)
 
 # Data
 if gdim == 2:
@@ -171,14 +166,14 @@ elif gdim == 3:
 else:
     raise RuntimeError("Unknown dim")
 
-E = 1e9
+E = 1
 nu = 0.3
 mu = E / (2.0 * (1.0 + nu))
 lmbda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))
 
 
 def epsilon(v):
-    return ufl.sym(grad(v))  # ~1
+    return ufl.sym(grad(v))
 
 
 def sigma(v):
@@ -193,7 +188,6 @@ g = dolfinx.fem.Function(V)
 x = ufl.SpatialCoordinate(mesh)
 n = ufl.FacetNormal(mesh)
 h = ufl.CellDiameter(mesh)
-
 
 # PDE
 betaN = args.betaN
@@ -233,7 +227,6 @@ ds_cut = ufl.dx(
 qr_bulk = [(cut_cells, qr_pts, qr_w)]
 qr_bdry = [(cut_cells, qr_pts_bdry, qr_w_bdry, qr_n)]
 
-# FIXME make sure we can assemble over many forms
 form1 = dolfinx.fem.form(a_bulk * dx_cut)
 form2 = dolfinx.fem.form(a_bdry * ds_cut(cut_cell_tag))
 
@@ -272,48 +265,95 @@ print("Get inactive_dofs took", t.elapsed()[0])
 t = dolfinx.common.Timer()
 A = cq.utils.lock_inactive_dofs(inactive_dofs, A)
 print("Lock inactive dofs took", t.elapsed()[0])
-if args.verbose:
-    cq.utils.dump("output/A_locked.txt", A)
 assert np.isfinite(A.norm()).all()
 
-# Solve as in demo_elasticity.py in dolfinx
-null_space = build_nullspace(V)
-A.setNearNullSpace(null_space)
-
-# Set solver options
-opts = PETSc.Options()
-opts["ksp_type"] = "cg"
-opts["ksp_rtol"] = 1.0e-10
-opts["pc_type"] = "gamg"
-
-# Use Chebyshev smoothing for multigrid
-opts["mg_levels_ksp_type"] = "chebyshev"
-opts["mg_levels_pc_type"] = "jacobi"
-
-# Improve estimate of eigenvalues for Chebyshev smoothing
-opts["mg_levels_esteig_ksp_type"] = "cg"
-opts["mg_levels_ksp_chebyshev_esteig_steps"] = 20
-
-# Create PETSc Krylov solver and turn convergence monitoring on
-solver = PETSc.KSP().create(mesh.comm)
-solver.setFromOptions()
-
-# Set matrix operator
-solver.setOperators(A)
-
 uh = dolfinx.fem.Function(V)
+uh.name = "uh"
 
-# Set a monitor, solve linear system, and display the solver
-# configuration
-solver.setMonitor(
-    lambda _, its, rnorm: print(f"Iteration: {its}, rel. residual: {rnorm}")
-)
-solver.solve(b, uh.vector)
-solver.view()
+if gdim == 2:
 
-# Scatter forward the solution vector to update ghost values
-uh.x.scatter_forward()
+    # Direct solver using mumps
+    ksp = PETSc.KSP().create(mesh.comm)
+    ksp.setOperators(A)
+    ksp.setType("preonly")
+    ksp.getPC().setType("lu")
+    ksp.getPC().setFactorSolverType("mumps")
+    vec = b.copy()
+    ksp.solve(b, vec)
+    vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
+    uh.vector.setArray(vec.array)
 
+else:
+
+    # Solve as in demo_elasticity.py in dolfinx
+    null_space = build_nullspace(V)
+    A.setNearNullSpace(null_space)
+
+    # Set solver options
+    opts = PETSc.Options()
+    opts["ksp_type"] = "cg"
+    opts["ksp_rtol"] = 1.0e-10
+    opts["pc_type"] = "gamg"
+
+    # Use Chebyshev smoothing for multigrid
+    opts["mg_levels_ksp_type"] = "chebyshev"
+    opts["mg_levels_pc_type"] = "jacobi"
+
+    # Improve estimate of eigenvalues for Chebyshev smoothing
+    opts["mg_levels_esteig_ksp_type"] = "cg"
+    opts["mg_levels_ksp_chebyshev_esteig_steps"] = 20
+
+    # Create PETSc Krylov solver and turn convergence monitoring on
+    solver = PETSc.KSP().create(mesh.comm)
+    solver.setFromOptions()
+
+    # Set matrix operator
+    solver.setOperators(A)
+
+    # Set a monitor, solve linear system, and display the solver
+    # configuration
+    solver.setMonitor(
+        lambda _, its, rnorm: print(f"Iteration: {its}, rel. residual: {rnorm}")
+    )
+    solver.solve(b, uh.vector)
+    solver.view()
+
+    # Scatter forward the solution vector to update ghost values
+    uh.x.scatter_forward()
+
+
+def flatten(lst):
+    return [item for sublist in lst for item in sublist]
+
+
+# Evaluate solution in qr to see that there aren't any spikes
+pts = np.reshape(flatten(xyz), (-1, gdim))
+pts_bdry = np.reshape(flatten(xyz_bdry), (-1, gdim))
+pts_bulk = dolfinx.mesh.compute_midpoints(mesh, gdim, uncut_cells)
+pts = np.append(pts, pts_bdry, axis=0)
+pts = np.append(pts, pts_bulk[:, 0:gdim], axis=0)
+if gdim == 2:
+    # Pad with zero column
+    pts = np.hstack((pts, np.zeros((pts.shape[0], 1))))
+
+bb_tree = dolfinx.geometry.BoundingBoxTree(mesh, gdim)
+cell_candidates = dolfinx.cpp.geometry.compute_collisions(bb_tree, pts)
+cells = dolfinx.cpp.geometry.compute_colliding_cells(mesh, cell_candidates, pts)
+uh_vals = uh.eval(pts, cells.array)
+for d in range(gdim):
+    print(f"uh {d} in range", min(uh_vals[:, d]), max(uh_vals[:, d]))
+
+if gdim == 2:
+    # Save coordinates and solution for plotting
+    filename = "output/uu" + str(args.N) + ".txt"
+    uu = np.empty((uh_vals.shape[0], 4))
+    uu[:, 0:2] = pts[:, 0:2]
+    uu[:, 2] = uh_vals[:, 0]
+    uu[:, 3] = uh_vals[:, 1]
+    np.savetxt(filename, uu)
+
+
+os.makedirs("output", exist_ok=True)
 with dolfinx.io.XDMFFile(mesh.comm, "output/displacements.xdmf", "w") as file:
     file.write_mesh(mesh)
     file.write_function(uh)
