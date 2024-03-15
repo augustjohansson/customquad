@@ -52,7 +52,7 @@ def write(filename, mesh, data):
         elif isinstance(data, dolfinx.fem.Function):
             xdmffile.write_function(data)
         else:
-            raise RuntimeError("Trying to write unsupported data")
+            raise RuntimeError("Unsupported data when writing file", filename)
 
 
 # Domain
