@@ -74,15 +74,11 @@ else:
 gdim = len(xmin)
 
 
-def u_exact(backend):
+def u_exact(m):
     if gdim == 2:
-        return lambda x: backend.sin(backend.pi * x[0]) * backend.sin(backend.pi * x[1])
+        return lambda x: m.sin(m.pi * x[0]) * m.sin(m.pi * x[1])
     else:
-        return (
-            lambda x: backend.sin(backend.pi * x[0])
-            * backend.sin(backend.pi * x[1])
-            * backend.sin(backend.pi * x[2])
-        )
+        return lambda x: m.sin(m.pi * x[0]) * m.sin(m.pi * x[1]) * m.sin(m.pi * x[2])
 
 
 # Mesh
@@ -209,7 +205,8 @@ else:
     h = max((xmax - xmin) / args.N)
 
 # Setup boundary traction and rhs
-g.interpolate(u_exact(np))
+# g.interpolate(u_exact(np))
+g = u_exact(ufl)(x)
 f = -ufl.div(ufl.grad(u_exact(ufl)(x)))
 # g.interpolate(lambda x: 0.0 + 1e-14 * x[0])
 # f.interpolate(lambda x: 1.0 + 1e-14 * x[0])
