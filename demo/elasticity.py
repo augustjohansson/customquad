@@ -16,9 +16,9 @@ parser.add_argument("-N", type=int, default=16)
 parser.add_argument("-algoim", action="store_true")
 parser.add_argument("-betaN", type=float, default=10.0)
 parser.add_argument("-betas", type=float, default=1.0)
-parser.add_argument("-domain", type=str, default="sphere")
+parser.add_argument("-domain", type=str, default="circle")
 parser.add_argument("-p", type=int, default=1)
-parser.add_argument("-order", type=int, default=1)
+parser.add_argument("-order", type=int, default=2)
 parser.add_argument("-verbose", action="store_true")
 args = parser.parse_args()
 print("arguments:")
@@ -158,13 +158,53 @@ with dolfinx.io.XDMFFile(mesh.comm, f"output/msh{args.N}.xdmf", "w") as xdmf:
     xdmf.write_meshtags(celltags)
     xdmf.write_meshtags(facetags)
 
-# Data
-if gdim == 2:
-    f = ufl.as_vector([1.0, 0.0])
-elif gdim == 3:
-    f = ufl.as_vector([0.0, 0.0, 1.0])
-else:
-    raise RuntimeError("Unknown dim")
+
+# def u_exact_x(backend):
+#     if gdim == 2:
+#         return lambda x: backend.sin(backend.pi * x[0]) * backend.sin(backend.pi * x[1])
+#     else:
+#         return (
+#             lambda x: backend.sin(backend.pi * x[0])
+#             * backend.sin(backend.pi * x[1])
+#             * backend.sin(backend.pi * x[2])
+#         )
+
+
+# def u_exact_y(backend):
+#     if gdim == 2:
+#         return lambda x: backend.sin(backend.pi * x[0]) * backend.sin(backend.pi * x[1])
+#     else:
+#         return (
+#             lambda x: backend.sin(backend.pi * x[0])
+#             * backend.sin(backend.pi * x[1])
+#             * backend.sin(backend.pi * x[2])
+#         )
+
+
+# def u_exact(backend):
+#     if backend.__name__ == "numpy":
+#         return lambda x: np.stack((u_exact_x(backend)(x), u_exact_y(backend)(x)))
+#     elif backend.__name__ == "ufl":
+#         return ufl.as_vector([u_exact_x(backend), u_exact_y(backend)])
+#     else:
+#         raise RuntimeError("Unknown backend", backend)
+
+x = ufl.SpatialCoordinate(mesh)
+LX = xmax[0] - xmin[0]
+LY = xmax[1] - xmin[1]
+u_ufl = ufl.as_vector(
+    [
+        ufl.cos((ufl.pi * x[1]) / LY) * ufl.sin((ufl.pi * x[0]) / LX),
+        ufl.sin((ufl.pi * x[0]) / LX) * ufl.sin((ufl.pi * x[1]) / LY),
+    ]
+)
+u_np = lambda x: np.stack(
+    [
+        np.cos((np.pi * x[1]) / LY) * np.sin((np.pi * x[0]) / LX),
+        np.sin((np.pi * x[0]) / LX) * np.sin((np.pi * x[1]) / LY),
+    ]
+)
+
 
 E = 1
 nu = 0.3
@@ -173,7 +213,7 @@ lmbda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))
 
 
 def epsilon(v):
-    return ufl.sym(grad(v))
+    return ufl.sym(ufl.nabla_grad(v))
 
 
 def sigma(v):
@@ -185,21 +225,25 @@ V = dolfinx.fem.VectorFunctionSpace(mesh, ("Lagrange", args.p))
 u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
 g = dolfinx.fem.Function(V)
-x = ufl.SpatialCoordinate(mesh)
 n = ufl.FacetNormal(mesh)
 h = ufl.CellDiameter(mesh)
+
+# Data
+g = u_ufl
+f = -ufl.nabla_div(sigma(u_ufl))
 
 # PDE
 betaN = args.betaN
 betas = args.betas
-a_bulk = inner(sigma(u), grad(v))
+a_bulk = inner(sigma(u), epsilon(v))
 L_bulk = inner(f, v)
 a_bdry = (
     -inner(dot(n, sigma(u)), v)
     - inner(u, dot(n, sigma(v)))
     + inner(betaN / h * (2 * mu + lmbda) * u, v)
 )
-a_stab = betas * avg(h) * inner(jump(sigma(u)), jump(sigma(v)))
+L_bdry = -inner(g, dot(n, sigma(v))) + inner(betaN / h * (2 * mu + lmbda) * g, v)
+a_stab = betas * avg(h) * inner(jump(sigma(u)), jump(grad(v)))
 
 # Standard measures
 dx_uncut = ufl.dx(subdomain_data=celltags, domain=mesh)
@@ -251,9 +295,9 @@ bc1 = cq.assemble_vector(L1, qr_bulk)
 b = bx
 b += bc1
 
-# L2 = dolfinx.fem.form(L_bdry * ds_cut)
-# bc2 = cq.assemble_vector(L2, qr_bdry)
-# b += bc2
+L2 = dolfinx.fem.form(L_bdry * ds_cut)
+bc2 = cq.assemble_vector(L2, qr_bdry)
+b += bc2
 
 assert np.isfinite(b.array).all()
 assert np.isfinite(A.norm())
@@ -345,6 +389,7 @@ for d in range(gdim):
 
 if gdim == 2:
     # Save coordinates and solution for plotting
+    os.makedirs("output", exist_ok=True)
     filename = "output/uu" + str(args.N) + ".txt"
     uu = np.empty((uh_vals.shape[0], 4))
     uu[:, 0:2] = pts[:, 0:2]
@@ -352,8 +397,45 @@ if gdim == 2:
     uu[:, 3] = uh_vals[:, 1]
     np.savetxt(filename, uu)
 
+    filename = "output/err" + str(args.N) + ".txt"
+    err = np.empty((uh_vals.shape[0], 4))
+    err[:, 0:2] = pts[:, 0:2]
+    xy = [pts[:, 0], pts[:, 1]]
+    uxy = u_np(xy)
+    err[:, 2] = abs(uh_vals[:, 0] - uxy[0])
+    err[:, 3] = abs(uh_vals[:, 1] - uxy[1])
+    np.savetxt(filename, err)
+    for d in range(gdim):
+        print(f"err {d} in range", min(err[:, d + 2]), max(err[:, d + 2]))
 
 os.makedirs("output", exist_ok=True)
 with dolfinx.io.XDMFFile(mesh.comm, "output/displacements.xdmf", "w") as file:
     file.write_mesh(mesh)
     file.write_function(uh)
+
+
+def assemble(integrand):
+    m_cut = cq.assemble_scalar(dolfinx.fem.form(integrand * dx_cut), qr_bulk)
+    m_uncut = dolfinx.fem.assemble_scalar(
+        dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
+    )
+    return m_cut + m_uncut
+
+
+# L2 errors: beware of cancellation
+t = dolfinx.common.Timer()
+L2_integrand = (uh - u_ufl) ** 2
+L2_err = np.sqrt(assemble(L2_integrand))
+print("Computing L2 errors took", t.elapsed()[0])
+
+# H10 errors
+t = dolfinx.common.Timer()
+H10_integrand = (grad(uh) - grad(u_ufl)) ** 2
+H10_err = np.sqrt(assemble(H10_integrand))
+print("Computing H10 errors took", t.elapsed()[0])
+
+# Dump
+h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
+conv = np.array([max(h), L2_err, H10_err])
+print(conv)
+np.savetxt("output/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
