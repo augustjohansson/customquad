@@ -1,4 +1,6 @@
 import dolfinx
+import customquad as cq
+import ufl
 import numba
 import numpy as np
 from petsc4py import PETSc
@@ -250,3 +252,11 @@ def area(xmin, xmax, NN, qr_w_bdry):
     cellvol = np.prod((xmax - xmin)[0:gdim]) / np.prod(NN)
     a = sum(flatten(qr_w_bdry)) * cellvol
     return a
+
+
+def assemble_cut_uncut(integrand, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag):
+    m_cut = cq.assemble_scalar(dolfinx.fem.form(integrand * dx_cut), qr_bulk)
+    m_uncut = dolfinx.fem.assemble_scalar(
+        dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
+    )
+    return m_cut + m_uncut

@@ -165,20 +165,12 @@ ds_cut = ufl.dx(
 )
 dx_cut = ufl.dx(metadata={"quadrature_rule": "runtime"}, domain=mesh)
 dx_uncut = ufl.dx(subdomain_data=celltags, domain=mesh)
-
-
-def assemble(integrand):
-    m_cut = cq.assemble_scalar(dolfinx.fem.form(integrand * dx_cut), qr_bulk)
-    m_uncut = dolfinx.fem.assemble_scalar(
-        dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
-    )
-    return m_cut + m_uncut
-
-
 qr_bulk = [(cut_cells, qr_pts, qr_w)]
 qr_bdry = [(cut_cells, qr_pts_bdry, qr_w_bdry, qr_n)]
 area_func = cq.assemble_scalar(dolfinx.fem.form(1.0 * ds_cut(cut_cell_tag)), qr_bdry)
-volume_func = assemble(1.0)
+volume_func = cq.utils.assemble_cut_uncut(
+    1.0, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag
+)
 ve = abs(volume_exact - volume_func) / volume_exact
 ae = abs(area_exact - area_func) / area_exact
 print("functional volume error", ve)
@@ -350,13 +342,19 @@ assert np.isfinite(uh.vector.array).all()
 # L2 errors: beware of cancellation
 t = dolfinx.common.Timer()
 L2_integrand = (uh - u_exact(ufl)(x)) ** 2
-L2_err = np.sqrt(assemble(L2_integrand))
+L2_err = np.sqrt(
+    cq.utils.assemble_cut_uncut(L2_integrand, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag)
+)
 print("Computing L2 errors took", t.elapsed()[0])
 
 # H10 errors
 t = dolfinx.common.Timer()
 H10_integrand = (grad(uh) - grad(u_exact(ufl)(x))) ** 2
-H10_err = np.sqrt(assemble(H10_integrand))
+H10_err = np.sqrt(
+    cq.utils.assemble_cut_uncut(
+        H10_integrand, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag
+    )
+)
 print("Computing H10 errors took", t.elapsed()[0])
 
 
