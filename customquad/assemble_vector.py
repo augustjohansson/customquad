@@ -78,7 +78,7 @@ def assemble_cells(b, kernel, vertices, coords, dofs, num_loc_dofs, coeffs, cons
 
         kernel(
             ffi.from_buffer(b_local),
-            ffi.from_buffer(coeffs[cell]),
+            ffi.from_buffer(coeffs[k]),
             ffi.from_buffer(consts),
             ffi.from_buffer(cell_coords),
             ffi.from_buffer(entity_local_index),

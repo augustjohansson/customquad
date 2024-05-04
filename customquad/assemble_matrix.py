@@ -89,7 +89,7 @@ def assemble_cells(
 
         kernel(
             ffi.from_buffer(A_local),
-            ffi.from_buffer(coeffs[cell]),
+            ffi.from_buffer(coeffs[k]),
             ffi.from_buffer(consts),
             ffi.from_buffer(cell_coords),
             ffi.from_buffer(entity_local_index),
