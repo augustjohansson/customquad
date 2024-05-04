@@ -4,7 +4,7 @@ import argparse
 import dolfinx
 import customquad as cq
 import ufl
-from ufl import grad, inner, dot, jump, avg
+from ufl import nabla_grad, inner, dot, jump, avg
 from mpi4py import MPI
 import numpy as np
 from petsc4py import PETSc
@@ -213,7 +213,7 @@ lmbda = E * nu / ((1.0 + nu) * (1.0 - 2.0 * nu))
 
 
 def epsilon(v):
-    return ufl.sym(ufl.nabla_grad(v))
+    return ufl.sym(nabla_grad(v))
 
 
 def sigma(v):
@@ -226,7 +226,10 @@ u = ufl.TrialFunction(V)
 v = ufl.TestFunction(V)
 g = dolfinx.fem.Function(V)
 n = ufl.FacetNormal(mesh)
-h = ufl.CellDiameter(mesh)
+if args.p == 1:
+    h = ufl.CellDiameter(mesh)
+else:
+    h = max((xmax - xmin) / args.N)
 
 # Data
 g = u_ufl
@@ -240,10 +243,41 @@ L_bulk = inner(f, v)
 a_bdry = (
     -inner(dot(n, sigma(u)), v)
     - inner(u, dot(n, sigma(v)))
-    + inner(betaN / h * (2 * mu + lmbda) * u, v)
+    + betaN / h * inner((2 * mu + lmbda) * u, v)
 )
-L_bdry = -inner(g, dot(n, sigma(v))) + inner(betaN / h * (2 * mu + lmbda) * g, v)
-a_stab = betas * avg(h) * inner(jump(sigma(u)), jump(grad(v)))
+L_bdry = -inner(g, dot(n, sigma(v))) + betaN / h * inner((2 * mu + lmbda) * g, v)
+# a_stab = betas * avg(h) * inner(jump(sigma(u)), jump(grad(v)))
+
+# Stab from Poisson:
+# a_stab = betas * avg(h) * inner(jump(n, nabla_grad(u)), jump(n, nabla_grad(v)))
+# if args.p == 2:
+#     a_stab += (
+#         betas
+#         * avg(h) ** 3
+#         * inner(
+#             jump(n, nabla_grad(nabla_grad(u))),
+#             jump(n, nabla_grad(nabla_grad(v))),
+#         )
+#     )
+
+
+def tensor_jump(v, n):
+    return ufl.outer(v("+"), n("+")) + ufl.outer(v("-"), n("-"))
+
+
+a_stab = (
+    betas * avg(h) * inner(tensor_jump(nabla_grad(u), n), tensor_jump(nabla_grad(v), n))
+)
+if args.p == 2:
+    a_stab += (
+        betas
+        * avg(h) ** 3
+        * inner(
+            tensor_jump(nabla_grad(nabla_grad(u)), n),
+            tensor_jump(nabla_grad(nabla_grad(v)), n),
+        )
+    )
+
 
 # Standard measures
 dx_uncut = ufl.dx(subdomain_data=celltags, domain=mesh)
@@ -414,24 +448,23 @@ with dolfinx.io.XDMFFile(mesh.comm, "output/displacements.xdmf", "w") as file:
     file.write_function(uh)
 
 
-def assemble(integrand):
-    m_cut = cq.assemble_scalar(dolfinx.fem.form(integrand * dx_cut), qr_bulk)
-    m_uncut = dolfinx.fem.assemble_scalar(
-        dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
-    )
-    return m_cut + m_uncut
-
-
 # L2 errors: beware of cancellation
 t = dolfinx.common.Timer()
 L2_integrand = (uh - u_ufl) ** 2
-L2_err = np.sqrt(assemble(L2_integrand))
+L2_err = np.sqrt(
+    cq.utils.assemble_cut_uncut(L2_integrand, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag)
+)
+# L2_err = cq.utils.error_L2(uh, u_ufl, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag)
 print("Computing L2 errors took", t.elapsed()[0])
 
 # H10 errors
 t = dolfinx.common.Timer()
-H10_integrand = (grad(uh) - grad(u_ufl)) ** 2
-H10_err = np.sqrt(assemble(H10_integrand))
+H10_integrand = (nabla_grad(uh) - nabla_grad(u_ufl)) ** 2
+H10_err = np.sqrt(
+    cq.utils.assemble_cut_uncut(
+        H10_integrand, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag
+    )
+)
 print("Computing H10 errors took", t.elapsed()[0])
 
 # Dump
