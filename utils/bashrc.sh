@@ -39,7 +39,7 @@ alias install-ufl='pushd . && \
 
 alias install-ffcx='pushd . && \
                     cd /root/ffcx-custom && \
-                    git checkout august/2023cq && \
+                    git checkout august/customquad && \
                     pip3 install -v . -U --no-deps && \
                     popd'
 
