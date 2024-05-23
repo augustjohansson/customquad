@@ -1,9 +1,7 @@
 import dolfinx
-import customquad as cq
-import ufl
-import numba
 import numpy as np
 from petsc4py import PETSc
+import customquad as cq
 
 
 def get_num_entities(mesh, tdim):
@@ -40,7 +38,7 @@ def get_dofs(V):
     <dolfinx.cpp.fem.DofMap object at 0x7fb521c7ae30>
     have list()
 
-    but if type(V) = <class 'dolfinx.fem.function.FunctionSpace'>
+    but if type(V) = <class 'dolfinx.fem.function.FunctionSpace'>`
     <dolfinx.fem.dofmap.DofMap object at 0x7fe5f7511360>
     have V.dofmap.list
 
@@ -56,7 +54,6 @@ def get_dofs(V):
             dofs = V.dofmap.list.array.reshape(num_cells, num_loc_dofs)
     else:
         dofs = np.ndarray((num_cells, num_loc_dofs), np.int32)
-        # r = np.arange(num_loc_dofs)
         # FIXME vectorize
         for cell in range(num_cells):
             for i, dof in enumerate(V.dofmap.cell_dofs(cell)):
@@ -107,26 +104,6 @@ def lock_inactive_dofs(inactive_dofs, A):
     return A
 
 
-def dump(filename, A, do_print=False):
-    print(f"dump to {filename}")
-
-    if isinstance(A, PETSc.Mat):
-        assert A.assembled
-        f = open(filename, "w")
-        for r in range(A.size[0]):
-            cols, vals = A.getRow(r)
-            for i in range(len(cols)):
-                s = str(r) + " " + str(cols[i]) + " " + str(vals[i]) + "\n"
-                f.write(s)
-                if do_print:
-                    print(s, end="")
-        f.close()
-    else:
-        f = open(filename, "w")
-        np.savetxt(f, A.array)
-        f.close()
-
-
 def get_celltags(
     mesh,
     cut_cells,
@@ -139,7 +116,8 @@ def get_celltags(
     assert outside_cell_tag != uncut_cell_tag
     assert outside_cell_tag != cut_cell_tag
     assert uncut_cell_tag != cut_cell_tag
-    init_tag = min(min(outside_cell_tag, uncut_cell_tag), cut_cell_tag) - 1
+
+    init_tag = min(outside_cell_tag, uncut_cell_tag, cut_cell_tag) - 1
     tdim = mesh.topology.dim
     num_cells = get_num_cells(mesh)
     cells = np.arange(0, num_cells)
@@ -193,51 +171,11 @@ def get_facetags(mesh, cut_cells, outside_cells, ghost_penalty_tag=1):
     return mt
 
 
-def print_for_header(
-    b_local,
-    coeffs,
-    constants,
-    cell_coords,
-    entity_local_index,
-    quadrature_permutation,
-    num_quadrature_points,
-    qr_pts,
-    qr_w,
-    qr_n,
-):
-    def print_flat(x):
-        print("{", end="")
-        for xi in x:
-            print(xi, end=",")
-        print("};")
-
-    print("printing function params:")
-    print("double A[] = ", end="")
-    print_flat(b_local)
-    print("const double w[] = ", end="")
-    print_flat(coeffs)
-    print("const double c[] = ", end="")
-    print_flat(constants)
-    print("const double coordinate_dofs[] = ", end="")
-    print_flat(cell_coords.flatten())
-    print("const int entity_local_index[] = ", end="")
-    print_flat(entity_local_index.flatten())
-    print("const uint8_t quadrature_permutation[] = ", end="")
-    print_flat(quadrature_permutation.flatten())
-    print("const int num_quadrature_points = ", num_quadrature_points, ";")
-    print("const double quadrature_points[] = ", end="")
-    print_flat(qr_pts)
-    print("const double quadrature_weights[] = ", end="")
-    print_flat(qr_w)
-    print("const double facet_normals[] = ", end="")
-    print_flat(qr_n)
-    print(
-        "tabulate_tensor_integral_custom_otherwise(A,w,c,coordinate_dofs,entity_local_index,quadrature_permutation,num_quadrature_points,quadrature_points,quadrature_weights,facet_normals);"
-    )
+def flatten(lst):
+    return [item for sublist in lst for item in sublist]
 
 
 def volume(xmin, xmax, NN, uncut_cells, qr_w):
-    flatten = lambda l: [item for sublist in l for item in sublist]
     gdim = len(NN)
     cellvol = np.prod((xmax - xmin)[0:gdim]) / np.prod(NN)
     cut_vol = sum(flatten(qr_w)) * cellvol
@@ -247,7 +185,6 @@ def volume(xmin, xmax, NN, uncut_cells, qr_w):
 
 
 def area(xmin, xmax, NN, qr_w_bdry):
-    flatten = lambda l: [item for sublist in l for item in sublist]
     gdim = len(NN)
     cellvol = np.prod((xmax - xmin)[0:gdim]) / np.prod(NN)
     a = sum(flatten(qr_w_bdry)) * cellvol
@@ -260,3 +197,18 @@ def assemble_cut_uncut(integrand, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag):
         dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
     )
     return m_cut + m_uncut
+
+
+def writeXDMF(filename, mesh, data):
+    with dolfinx.io.XDMFFile(
+        mesh.comm,
+        filename,
+        "w",
+    ) as xdmffile:
+        xdmffile.write_mesh(mesh)
+        if isinstance(data, dolfinx.mesh.MeshTagsMetaClass):
+            xdmffile.write_meshtags(data)
+        elif isinstance(data, dolfinx.fem.Function):
+            xdmffile.write_function(data)
+        else:
+            raise RuntimeError("Unsupported data when writing file", filename)
