@@ -1,14 +1,13 @@
+import argparse
+import os
+import numpy as np
 import dolfinx
-import customquad as cq
 import ufl
 from ufl import grad, inner, dot, jump, avg
 from mpi4py import MPI
-import numpy as np
 from petsc4py import PETSc
-import argparse
+import customquad as cq
 import algoim_utils
-import os
-
 
 # Setup arguments
 parser = argparse.ArgumentParser()
@@ -22,38 +21,13 @@ parser.add_argument("-order", type=int, default=1)
 parser.add_argument("-verbose", action="store_true")
 parser.add_argument("-solver", type=str, default="mumps")
 parser.add_argument("-gamma", type=float, default=0.5)
+parser.add_argument("-output", type=str, default="output")
 args = parser.parse_args()
 print("arguments:")
 for arg in vars(args):
     print("\t", arg, getattr(args, arg))
 
-
-# tag = (
-#     "domain" + args.domain + "_"
-#     "p" + str(args.p) + "_"
-#     "order" + str(args.order) + "_"
-#     "betaN" + str(args.betaN) + "_"
-#     "betas" + str(args.betas) + "_"
-# )
-# outputdir = "output_" + tag
-outputdir = "output"
-os.makedirs(outputdir, exist_ok=True)
-
-
-def write(filename, mesh, data):
-    with dolfinx.io.XDMFFile(
-        mesh.comm,
-        filename,
-        "w",
-    ) as xdmffile:
-        xdmffile.write_mesh(mesh)
-        if isinstance(data, dolfinx.mesh.MeshTagsMetaClass):
-            xdmffile.write_meshtags(data)
-        elif isinstance(data, dolfinx.fem.Function):
-            xdmffile.write_function(data)
-        else:
-            raise RuntimeError("Unsupported data when writing file", filename)
-
+os.makedirs(args.output, exist_ok=True)
 
 # Domain
 if args.domain == "circle":
@@ -69,7 +43,7 @@ elif args.domain == "sphere":
     area_exact = 4 * np.pi
 
 else:
-    RuntimeError("Unknown domain", args.domain)
+    raise RuntimeError("Unknown domain", args.domain)
 
 gdim = len(xmin)
 
@@ -77,8 +51,7 @@ gdim = len(xmin)
 def u_exact(m):
     if gdim == 2:
         return lambda x: m.sin(m.pi * x[0]) * m.sin(m.pi * x[1])
-    else:
-        return lambda x: m.sin(m.pi * x[0]) * m.sin(m.pi * x[1]) * m.sin(m.pi * x[2])
+    return lambda x: m.sin(m.pi * x[0]) * m.sin(m.pi * x[1]) * m.sin(m.pi * x[2])
 
 
 # Mesh
@@ -101,7 +74,11 @@ NN = np.array([args.N] * gdim, dtype=np.int32)
 #     assert mesh.geometry.dim == gdim
 
 t = dolfinx.common.Timer()
-mesh = cq.create_mesh(np.array([xmin, xmax]), NN, args.p, args.verbose)
+# mesh = cq.create_mesh(np.array([xmin, xmax]), NN, args.p, args.verbose)
+mesh = dolfinx.mesh.create_rectangle(
+    MPI.COMM_WORLD, np.array([xmin, xmax]), NN, dolfinx.mesh.CellType.quadrilateral
+)
+
 print("Generating mesh took", t.elapsed()[0])
 
 if args.verbose:
@@ -154,7 +131,7 @@ facetags = cq.utils.get_facetags(
 print("Generating face tags took", t.elapsed()[0])
 
 # Write mesh with tags
-with dolfinx.io.XDMFFile(mesh.comm, f"output/msh{args.N}.xdmf", "w") as xdmf:
+with dolfinx.io.XDMFFile(mesh.comm, args.output + f"/msh{args.N}.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_meshtags(celltags)
     xdmf.write_meshtags(facetags)
@@ -265,11 +242,11 @@ bc2 = cq.assemble_vector(L2, qr_bdry)
 b += bc2
 
 if args.verbose:
-    cq.utils.dump("output/A.txt", A)
-    cq.utils.dump("output/b.txt", b)
-    cq.utils.dump("output/bx.txt", bx)
-    cq.utils.dump("output/bc1.txt", bc1)
-    cq.utils.dump("output/bc2.txt", bc2)
+    cq.utils.dump(args.output + "/A.txt", A)
+    cq.utils.dump(args.output + "/b.txt", b)
+    cq.utils.dump(args.output + "/bx.txt", bx)
+    cq.utils.dump(args.output + "/bc1.txt", bc1)
+    cq.utils.dump(args.output + "/bc2.txt", bc2)
 
 assert np.isfinite(b.array).all()
 assert np.isfinite(A.norm())
@@ -282,7 +259,7 @@ t = dolfinx.common.Timer()
 A = cq.utils.lock_inactive_dofs(inactive_dofs, A)
 print("Lock inactive dofs took", t.elapsed()[0])
 if args.verbose:
-    cq.utils.dump("output/A_locked.txt", A)
+    cq.utils.dump(args.output + "/A_locked.txt", A)
 assert np.isfinite(A.norm()).all()
 
 
@@ -329,12 +306,12 @@ print(f"Solver {args.solver} solve took", t.elapsed()[0])
 print("Matrix size", len(vec.array))
 
 if args.verbose:
-    cg.utils.dump("output/vec.txt", vec)
+    cg.debug_utils.dump(args.output + "/vec.txt", vec)
 
 uh = dolfinx.fem.Function(V)
 uh.vector.setArray(vec.array)
 uh.name = "uh"
-write(outputdir + "/poisson" + str(args.N) + ".xdmf", mesh, uh)
+cq.utils.writeXDMF(args.output + "/poisson" + str(args.N) + ".xdmf", mesh, uh)
 assert np.isfinite(vec.array).all()
 assert np.isfinite(uh.vector.array).all()
 
@@ -358,13 +335,9 @@ H10_err = np.sqrt(
 print("Computing H10 errors took", t.elapsed()[0])
 
 
-def flatten(lst):
-    return [item for sublist in lst for item in sublist]
-
-
 # Evaluate solution in qr to see that there aren't any spikes
-pts = np.reshape(flatten(xyz), (-1, gdim))
-pts_bdry = np.reshape(flatten(xyz_bdry), (-1, gdim))
+pts = np.reshape(cq.utils.flatten(xyz), (-1, gdim))
+pts_bdry = np.reshape(cq.utils.flatten(xyz_bdry), (-1, gdim))
 pts_bulk = dolfinx.mesh.compute_midpoints(mesh, gdim, uncut_cells)
 pts = np.append(pts, pts_bdry, axis=0)
 pts = np.append(pts, pts_bulk[:, 0:gdim], axis=0)
@@ -380,7 +353,7 @@ print("uh in range", uh_vals.min(), uh_vals.max())
 
 if gdim == 2:
     # Save coordinates and solution for plotting
-    filename = outputdir + "/uu" + str(args.N) + ".txt"
+    filename = args.output + "/uu" + str(args.N) + ".txt"
     uu = pts
     uu[:, 2] = uh_vals
     np.savetxt(filename, uu)
@@ -389,7 +362,7 @@ if gdim == 2:
     err = pts
     xy = [pts[:, 0], pts[:, 1]]
     err[:, 2] = abs(u_exact(np)(xy) - uh_vals)
-    filename = outputdir + "/err" + str(args.N) + ".txt"
+    filename = args.output + "/err" + str(args.N) + ".txt"
     np.savetxt(filename, err)
 
 # Print
@@ -409,4 +382,4 @@ conv = np.array(
 
 print(conv)
 
-np.savetxt(outputdir + "/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
+np.savetxt(args.output + "/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))

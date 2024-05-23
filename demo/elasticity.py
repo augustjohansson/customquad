@@ -1,13 +1,13 @@
 import os
 from contextlib import ExitStack
 import argparse
-import dolfinx
-import customquad as cq
-import ufl
-from ufl import nabla_grad, inner, dot, jump, avg
-from mpi4py import MPI
 import numpy as np
+import dolfinx
+import ufl
+from ufl import nabla_grad, inner, dot, avg
+from mpi4py import MPI
 from petsc4py import PETSc
+import customquad as cq
 import algoim_utils
 
 # Setup arguments
@@ -20,10 +20,13 @@ parser.add_argument("-domain", type=str, default="circle")
 parser.add_argument("-p", type=int, default=1)
 parser.add_argument("-order", type=int, default=2)
 parser.add_argument("-verbose", action="store_true")
+parser.add_argument("-output", type=str, default="output")
 args = parser.parse_args()
 print("arguments:")
 for arg in vars(args):
     print("\t", arg, getattr(args, arg))
+
+os.makedirs(args.output, exist_ok=True)
 
 
 def build_nullspace(V):
@@ -60,21 +63,6 @@ def build_nullspace(V):
     assert dolfinx.la.is_orthonormal(ns)
 
     return PETSc.NullSpace().create(vectors=ns)
-
-
-def write(filename, mesh, data):
-    with dolfinx.io.XDMFFile(
-        mesh.comm,
-        filename,
-        "w",
-    ) as xdmffile:
-        xdmffile.write_mesh(mesh)
-        if isinstance(data, dolfinx.mesh.MeshTagsMetaClass):
-            xdmffile.write_meshtags(data)
-        elif isinstance(data, dolfinx.fem.Function):
-            xdmffile.write_function(data)
-        else:
-            raise RuntimeError("Unsupported data when writing file", filename)
 
 
 # Domain
@@ -152,8 +140,7 @@ facetags = cq.utils.get_facetags(
 )
 
 # Write mesh with tags
-os.makedirs("output", exist_ok=True)
-with dolfinx.io.XDMFFile(mesh.comm, f"output/msh{args.N}.xdmf", "w") as xdmf:
+with dolfinx.io.XDMFFile(mesh.comm, args.output + f"/msh{args.N}.xdmf", "w") as xdmf:
     xdmf.write_mesh(mesh)
     xdmf.write_meshtags(celltags)
     xdmf.write_meshtags(facetags)
@@ -400,13 +387,9 @@ else:
     uh.x.scatter_forward()
 
 
-def flatten(lst):
-    return [item for sublist in lst for item in sublist]
-
-
 # Evaluate solution in qr to see that there aren't any spikes
-pts = np.reshape(flatten(xyz), (-1, gdim))
-pts_bdry = np.reshape(flatten(xyz_bdry), (-1, gdim))
+pts = np.reshape(cq.utils.flatten(xyz), (-1, gdim))
+pts_bdry = np.reshape(cq.utils.flatten(xyz_bdry), (-1, gdim))
 pts_bulk = dolfinx.mesh.compute_midpoints(mesh, gdim, uncut_cells)
 pts = np.append(pts, pts_bdry, axis=0)
 pts = np.append(pts, pts_bulk[:, 0:gdim], axis=0)
@@ -423,15 +406,14 @@ for d in range(gdim):
 
 if gdim == 2:
     # Save coordinates and solution for plotting
-    os.makedirs("output", exist_ok=True)
-    filename = "output/uu" + str(args.N) + ".txt"
+    filename = args.output + "/uu" + str(args.N) + ".txt"
     uu = np.empty((uh_vals.shape[0], 4))
     uu[:, 0:2] = pts[:, 0:2]
     uu[:, 2] = uh_vals[:, 0]
     uu[:, 3] = uh_vals[:, 1]
     np.savetxt(filename, uu)
 
-    filename = "output/err" + str(args.N) + ".txt"
+    filename = args.output + "/err" + str(args.N) + ".txt"
     err = np.empty((uh_vals.shape[0], 4))
     err[:, 0:2] = pts[:, 0:2]
     xy = [pts[:, 0], pts[:, 1]]
@@ -442,8 +424,7 @@ if gdim == 2:
     for d in range(gdim):
         print(f"err {d} in range", min(err[:, d + 2]), max(err[:, d + 2]))
 
-os.makedirs("output", exist_ok=True)
-with dolfinx.io.XDMFFile(mesh.comm, "output/displacements.xdmf", "w") as file:
+with dolfinx.io.XDMFFile(mesh.comm, args.output + "/displacements.xdmf", "w") as file:
     file.write_mesh(mesh)
     file.write_function(uh)
 
@@ -471,4 +452,4 @@ print("Computing H10 errors took", t.elapsed()[0])
 h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
 conv = np.array([max(h), L2_err, H10_err])
 print(conv)
-np.savetxt("output/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
+np.savetxt(args.output + "/conv" + str(args.N) + ".txt", conv.reshape(1, conv.shape[0]))
