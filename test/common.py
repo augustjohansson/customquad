@@ -112,7 +112,8 @@ def assemble_matrix_test(mesh, polynomial_order, quadrature_degree, fcn):
     return A, A_ref
 
 
-def get_mesh(N = 10):
+def get_mesh(N=10):
+
     # Mesh
     cell_type = dolfinx.mesh.CellType.quadrilateral
     xmin = np.array([-1.23, -11.11])
@@ -203,3 +204,41 @@ def entities_to_geometry(mesh, dim, entity_list):
         entity_geometry[i] = xc[entity_dofs]
 
     return entity_geometry
+
+
+def assemble_scalar_setup():
+
+    N = 5
+    (
+        mesh,
+        h,
+        celltags,
+        cut_cell_tag,
+        uncut_cell_tag,
+        outside_cell_tag,
+    ) = get_mesh(N)
+
+    cell_vol = np.prod(h)
+
+    with dolfinx.io.XDMFFile(mesh.comm, "mesh.xdmf", "w") as xdmf:
+        xdmf.write_mesh(mesh)
+        xdmf.write_meshtags(celltags)
+
+    cut_cells = np.where(celltags.values == cut_cell_tag)[0]
+    uncut_cells = np.where(celltags.values == uncut_cell_tag)[0]
+    outside_cells = np.where(celltags.values == outside_cell_tag)[0]
+
+    # QR
+    dim = mesh.geometry.dim
+    qr_pts = np.tile([0.5] * dim, [len(cut_cells), 1])
+    qr_w = np.tile(1.0, [len(cut_cells), 1])
+    qr_n = qr_pts
+    qr_data = [(cut_cells, qr_pts, qr_w, qr_n)]
+
+    # Measures
+    ds_cut = ufl.dx(
+        subdomain_data=celltags, metadata={"quadrature_rule": "runtime"}, domain=mesh
+    )
+    dx_cut = ufl.dx(metadata={"quadrature_rule": "runtime"}, domain=mesh)
+
+    return mesh, cell_vol, ds_cut, dx_cut, qr_data, cut_cells, cut_cell_tag
