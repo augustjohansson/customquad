@@ -212,3 +212,17 @@ def writeXDMF(filename, mesh, data):
             xdmffile.write_function(data)
         else:
             raise RuntimeError("Unsupported data when writing file", filename)
+
+
+def subdomain(qr_data, num_cells):
+    # In the case of integration over subdomains,
+    # eg. ds_cut(cut_cell_tag), the coeffs are already defined over
+    # the subdomain with id=cut_cell_tag. Hence we need to renumber
+    # the cells in the qr_data to match this. Note that the provided
+    # quadrature rule must match the number of cells in this
+    # subdomain.
+
+    idx = np.arange(num_cells)
+    qr_data2 = [(idx,) + qr[1:] for qr in qr_data]
+
+    return qr_data2

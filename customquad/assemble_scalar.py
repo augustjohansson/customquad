@@ -5,11 +5,17 @@ from .setup_types import ffi, PETSc
 from . import utils
 
 
-def assemble_scalar(form, qr_data):
+def assemble_scalar(form, qr_data, domain_idx=None):
     vertices, coords, _ = utils.get_vertices(form.mesh)
     integral_ids = form.integral_ids(dolfinx.cpp.fem.IntegralType.cell)
-    all_coeffs = dolfinx.cpp.fem.pack_coefficients(form)
+    fem_coeffs = dolfinx.cpp.fem.pack_coefficients(form)
     consts = dolfinx.cpp.fem.pack_constants(form)
+
+    # If there are subdomains (given by domain_idx) and coefficents,
+    # renumber the qr_data cells
+    if len(form.coefficients) > 0 and domain_idx is not None:
+        subdomains = form.domains(dolfinx.cpp.fem.IntegralType.cell, domain_idx)
+        qr_data = utils.subdomain(qr_data, len(subdomains))
 
     m = np.zeros(1, dtype=PETSc.ScalarType)
 
@@ -18,8 +24,7 @@ def assemble_scalar(form, qr_data):
             form.ufcx_form.integrals(dolfinx.cpp.fem.IntegralType.cell)[i],
             "tabulate_tensor_runtime_float64",
         )
-
-        coeffs = all_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)]
+        coeffs = fem_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)]
 
         assemble_cells(
             m,
@@ -47,11 +52,6 @@ def assemble_cells(m, kernel, vertices, coords, coeffs, consts, qr):
     assert len(cells) == len(qr_pts)
     assert len(cells) == len(qr_w)
 
-    # # This is needed if running w/o numba. With numba, if
-    # len(coeffs) == 0, the coeffs[cell] is still ok
-    # if len(coeffs) = 0:
-    #   coeffs = [] * len(cells)
-
     # Initialize
     num_loc_vertices = vertices.shape[1]
     cell_coords = np.zeros((num_loc_vertices, 3))
@@ -68,7 +68,7 @@ def assemble_cells(m, kernel, vertices, coords, coeffs, consts, qr):
 
         kernel(
             ffi.from_buffer(m_local),
-            ffi.from_buffer(coeffs[k]),
+            ffi.from_buffer(coeffs[cell]),
             ffi.from_buffer(consts),
             ffi.from_buffer(cell_coords),
             ffi.from_buffer(entity_local_index),
