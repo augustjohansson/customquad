@@ -112,9 +112,8 @@ def assemble_matrix_test(mesh, polynomial_order, quadrature_degree, fcn):
     return A, A_ref
 
 
-def get_mesh():
+def get_mesh(N = 10):
     # Mesh
-    N = 10
     cell_type = dolfinx.mesh.CellType.quadrilateral
     xmin = np.array([-1.23, -11.11])
     xmax = np.array([3.33, 99.99])
