@@ -206,7 +206,7 @@ def entities_to_geometry(mesh, dim, entity_list):
     return entity_geometry
 
 
-def assemble_scalar_setup():
+def setup_midpoint_qr():
 
     N = 5
     (
@@ -236,9 +236,9 @@ def assemble_scalar_setup():
     qr_data = [(cut_cells, qr_pts, qr_w, qr_n)]
 
     # Measures
-    ds_cut = ufl.dx(
+    dx_sub = ufl.dx(
         subdomain_data=celltags, metadata={"quadrature_rule": "runtime"}, domain=mesh
     )
     dx_cut = ufl.dx(metadata={"quadrature_rule": "runtime"}, domain=mesh)
 
-    return mesh, cell_vol, ds_cut, dx_cut, qr_data, cut_cells, cut_cell_tag
+    return mesh, cell_vol, dx_sub, dx_cut, qr_data, cut_cell_tag
