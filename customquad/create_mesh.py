@@ -6,7 +6,7 @@ import ufl
 import basix
 
 
-def create_mesh(xrange, N, degree, debug=False):
+def create_mesh(xrange, N, degree, debug=False, meshType="Progression", coef=1.0):
     # 1. Create gmsh grid using transfinite interpolation
     gmsh.initialize()
     if not debug:
@@ -66,7 +66,17 @@ def create_mesh(xrange, N, degree, debug=False):
         dx = np.array(bbox[3:]) - np.array(bbox[:3])
         dim = np.argmax(dx)
         assert dim < gdim
-        gmsh.model.mesh.setTransfiniteCurve(line[1], N[dim] + 1)
+
+        # Check direction of line for grading (tested in 2D)
+        der = gmsh.model.getDerivative(line[0], line[1], [0.5])
+        if der[dim] > 0:
+            sign = -1
+        else:
+            sign = 1
+
+        gmsh.model.mesh.setTransfiniteCurve(
+            line[1], N[dim] + 1, meshType=meshType, coef=sign * coef
+        )
 
     # Surfaces
     for surf in gmsh.model.getEntities(2):
