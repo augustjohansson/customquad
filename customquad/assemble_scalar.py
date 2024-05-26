@@ -5,16 +5,16 @@ from .setup_types import ffi, PETSc
 from . import utils
 
 
-def assemble_scalar(form, qr_data, domain_idx=None):
+def assemble_scalar(form, qr_data, subdomain_id=None):
     vertices, coords, _ = utils.get_vertices(form.mesh)
     integral_ids = form.integral_ids(dolfinx.cpp.fem.IntegralType.cell)
     fem_coeffs = dolfinx.cpp.fem.pack_coefficients(form)
     consts = dolfinx.cpp.fem.pack_constants(form)
 
-    # If there are subdomains (given by domain_idx) and coefficents,
+    # If there are subdomains (given by subdomain_id) and coefficents,
     # renumber the qr_data cells
-    if len(form.coefficients) > 0 and domain_idx is not None:
-        subdomains = form.domains(dolfinx.cpp.fem.IntegralType.cell, domain_idx)
+    if len(form.coefficients) > 0 and subdomain_id is not None:
+        subdomains = form.domains(dolfinx.cpp.fem.IntegralType.cell, subdomain_id)
         qr_data = utils.subdomain(qr_data, len(subdomains))
 
     m = np.zeros(1, dtype=PETSc.ScalarType)
