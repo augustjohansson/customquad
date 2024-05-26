@@ -5,7 +5,7 @@ from .setup_types import ffi, PETSc
 from . import utils
 
 
-def assemble_vector(form, qr_data):
+def assemble_vector(form, qr_data, subdomain_id=None):
     # qr_data is a list of tuples containing (cells, qr_pts, qr_w,
     # qr_n) (both for volume and surface integrals). Here, each of
     # qr_pts, qr_w and qr_n should be list(numpy.array) with len(list)
@@ -21,8 +21,14 @@ def assemble_vector(form, qr_data):
     vertices, coords, gdim = utils.get_vertices(V.mesh)
 
     integral_ids = form.integral_ids(dolfinx.cpp.fem.IntegralType.cell)
-    all_coeffs = dolfinx.cpp.fem.pack_coefficients(form)
+    fem_coeffs = dolfinx.cpp.fem.pack_coefficients(form)
     consts = dolfinx.cpp.fem.pack_constants(form)
+
+    # If there are subdomains (given by subdomain_id) and coefficents,
+    # renumber the qr_data cells
+    if len(form.coefficients) > 0 and subdomain_id is not None:
+        subdomains = form.domains(dolfinx.cpp.fem.IntegralType.cell, subdomain_id)
+        qr_data = utils.subdomain(qr_data, len(subdomains))
 
     b = dolfinx.cpp.la.petsc.create_vector(V.dofmap.index_map, V.dofmap.index_map_bs)
 
@@ -32,7 +38,7 @@ def assemble_vector(form, qr_data):
             "tabulate_tensor_runtime_float64",
         )
 
-        coeffs = all_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)]
+        coeffs = fem_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)]
 
         assemble_cells(
             b,
