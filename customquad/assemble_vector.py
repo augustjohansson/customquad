@@ -26,13 +26,14 @@ def assemble_vector(form, qr_data):
 
     # Map coeffs if coeffs are restricted to subdomain (eg if using
     # form(v*dx(subdomain_id))
-    for i, id in enumerate(integral_ids):
-        coeffs = fem_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)]
-        cmax = max(qr_data[i][0]) + 1
-        if coeffs.shape[0] < cmax:
-            coeffs_exp = np.zeros((cmax, coeffs.shape[1]))
-            coeffs_exp[qr_data[i][0], :] = coeffs
-            fem_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)] = coeffs_exp
+    if len(form.coefficients) > 0:
+        for i, id in enumerate(integral_ids):
+            coeffs = fem_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)]
+            cmax = max(qr_data[i][0]) + 1
+            if coeffs.shape[0] < cmax:
+                coeffs_exp = np.zeros((cmax, coeffs.shape[1]))
+                coeffs_exp[qr_data[i][0], :] = coeffs
+                fem_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)] = coeffs_exp
 
     b = dolfinx.cpp.la.petsc.create_vector(V.dofmap.index_map, V.dofmap.index_map_bs)
 
