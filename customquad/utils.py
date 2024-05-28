@@ -192,10 +192,15 @@ def area(xmin, xmax, NN, qr_w_bdry):
 
 
 def assemble_cut_uncut(integrand, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag):
-    m_cut = cq.assemble_scalar(dolfinx.fem.form(integrand * dx_cut), qr_bulk)
-    m_uncut = dolfinx.fem.assemble_scalar(
-        dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
-    )
+
+    # Assemble over cut part
+    form = dolfinx.fem.form(integrand * dx_cut)
+    m_cut = cq.assemble_scalar(form, qr_bulk)
+
+    # Assemble over interior
+    form = dolfinx.fem.form(integrand * dx_uncut(uncut_cell_tag))
+    m_uncut = dolfinx.fem.assemble_scalar(form)
+
     return m_cut + m_uncut
 
 
