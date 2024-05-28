@@ -49,6 +49,7 @@ def dump(filename, A, do_print=False):
 
     if isinstance(A, PETSc.Mat):
         assert A.assembled
+        print(A.size)
         with open(filename, "w") as f:
             for r in range(A.size[0]):
                 cols, vals = A.getRow(r)
@@ -58,4 +59,5 @@ def dump(filename, A, do_print=False):
                     if do_print:
                         print(s, end="")
     else:
+        print(len(A.array))
         np.savetxt(filename, A.array)
