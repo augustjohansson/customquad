@@ -5,7 +5,7 @@ from .setup_types import ffi, PETSc
 from . import utils
 
 
-def assemble_vector(form, qr_data, subdomain_id=None):
+def assemble_vector(form, qr_data):
     # qr_data is a list of tuples containing (cells, qr_pts, qr_w,
     # qr_n) (both for volume and surface integrals). Here, each of
     # qr_pts, qr_w and qr_n should be list(numpy.array) with len(list)
@@ -24,11 +24,15 @@ def assemble_vector(form, qr_data, subdomain_id=None):
     fem_coeffs = dolfinx.cpp.fem.pack_coefficients(form)
     consts = dolfinx.cpp.fem.pack_constants(form)
 
-    # If there are subdomains (given by subdomain_id) and coefficents,
-    # renumber the qr_data cells
-    if len(form.coefficients) > 0 and subdomain_id is not None:
-        subdomains = form.domains(dolfinx.cpp.fem.IntegralType.cell, subdomain_id)
-        qr_data = utils.subdomain(qr_data, len(subdomains))
+    # Map coeffs if coeffs are restricted to subdomain (eg if using
+    # form(v*dx(subdomain_id))
+    for i, id in enumerate(integral_ids):
+        coeffs = fem_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)]
+        cmax = max(qr_data[i][0]) + 1
+        if coeffs.shape[0] < cmax:
+            coeffs_exp = np.zeros((cmax, coeffs.shape[1]))
+            coeffs_exp[qr_data[i][0], :] = coeffs
+            fem_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)] = coeffs_exp
 
     b = dolfinx.cpp.la.petsc.create_vector(V.dofmap.index_map, V.dofmap.index_map_bs)
 
@@ -84,7 +88,7 @@ def assemble_cells(b, kernel, vertices, coords, dofs, num_loc_dofs, coeffs, cons
 
         kernel(
             ffi.from_buffer(b_local),
-            ffi.from_buffer(coeffs[k]),
+            ffi.from_buffer(coeffs[cell]),
             ffi.from_buffer(consts),
             ffi.from_buffer(cell_coords),
             ffi.from_buffer(entity_local_index),
@@ -95,6 +99,9 @@ def assemble_cells(b, kernel, vertices, coords, dofs, num_loc_dofs, coeffs, cons
             ffi.from_buffer(qr_n[k]),
         )
 
+        # print("assemble_vector", cell, b_local)
+
         # FIXME: Change to petsc set_values_local from setup_types?
         for j in range(num_loc_dofs):
             b[dofs[cell, j]] += b_local[j]
+        # print("glob", b.array)

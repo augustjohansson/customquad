@@ -5,17 +5,24 @@ from .setup_types import ffi, PETSc
 from . import utils
 
 
-def assemble_scalar(form, qr_data, subdomain_id=None):
+def assemble_scalar(form, qr_data, debug=False, debug_message="Mapping FE coeffs..."):
     vertices, coords, _ = utils.get_vertices(form.mesh)
     integral_ids = form.integral_ids(dolfinx.cpp.fem.IntegralType.cell)
     fem_coeffs = dolfinx.cpp.fem.pack_coefficients(form)
     consts = dolfinx.cpp.fem.pack_constants(form)
 
-    # If there are subdomains (given by subdomain_id) and coefficents,
-    # renumber the qr_data cells
-    if len(form.coefficients) > 0 and subdomain_id is not None:
-        subdomains = form.domains(dolfinx.cpp.fem.IntegralType.cell, subdomain_id)
-        qr_data = utils.subdomain(qr_data, len(subdomains))
+    # Map coeffs if coeffs are restricted to subdomain (eg if using
+    # form(v*dx(subdomain_id))
+    if len(form.coefficients) > 0:
+        for i, id in enumerate(integral_ids):
+            coeffs = fem_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)]
+            cmax = max(qr_data[i][0]) + 1
+            if coeffs.shape[0] < cmax:
+                if debug:
+                    print(debug_message)
+                coeffs_exp = np.zeros((cmax, coeffs.shape[1]))
+                coeffs_exp[qr_data[i][0], :] = coeffs
+                fem_coeffs[(dolfinx.cpp.fem.IntegralType.cell, id)] = coeffs_exp
 
     m = np.zeros(1, dtype=PETSc.ScalarType)
 

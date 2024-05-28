@@ -232,7 +232,7 @@ def setup_midpoint_qr():
     dim = mesh.geometry.dim
     qr_pts = np.tile([0.5] * dim, [len(cut_cells), 1])
     qr_w = np.tile(1.0, [len(cut_cells), 1])
-    qr_n = qr_pts
+    qr_n = qr_pts # dummy
     qr_data = [(cut_cells, qr_pts, qr_w, qr_n)]
 
     # Measures
@@ -241,4 +241,4 @@ def setup_midpoint_qr():
     )
     dx_cut = ufl.dx(metadata={"quadrature_rule": "runtime"}, domain=mesh)
 
-    return mesh, cell_vol, dx_sub, dx_cut, qr_data, cut_cell_tag
+    return mesh, cell_vol, dx_sub, dx_cut, qr_data, cut_cell_tag, celltags
