@@ -20,7 +20,7 @@ parser.add_argument("-p", type=int, default=1)
 parser.add_argument("-order", type=int, default=1)
 parser.add_argument("-verbose", action="store_true")
 parser.add_argument("-solver", type=str, default="mumps")
-parser.add_argument("-gamma", type=float, default=0.5)
+# parser.add_argument("-gamma", type=float, default=0.5)
 parser.add_argument("-output", type=str, default="output")
 args = parser.parse_args()
 print("arguments:")
@@ -56,29 +56,8 @@ def u_exact(m):
 
 # Mesh
 NN = np.array([args.N] * gdim, dtype=np.int32)
-# if args.p == 1:
-#     if gdim == 2:
-#         cell_type = dolfinx.mesh.CellType.quadrilateral
-#         mesh_generator = dolfinx.mesh.create_rectangle
-#     else:
-#         cell_type = dolfinx.mesh.CellType.hexahedron
-#         mesh_generator = dolfinx.mesh.create_box
-#     mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
-#     assert mesh.geometry.dim == gdim
-
-# else:
-#     if gdim == 2:
-#         mesh = cq.create_high_order_quad_mesh(np.array([xmin, xmax]), NN, args.p)
-#     else:
-#         mesh = cq.create_high_order_hex_mesh(np.array([xmin, xmax]), NN, args.p)
-#     assert mesh.geometry.dim == gdim
-
 t = dolfinx.common.Timer()
-# mesh = cq.create_mesh(np.array([xmin, xmax]), NN, args.p, args.verbose)
-mesh = dolfinx.mesh.create_rectangle(
-    MPI.COMM_WORLD, np.array([xmin, xmax]), NN, dolfinx.mesh.CellType.quadrilateral
-)
-
+mesh = cq.create_mesh(np.array([xmin, xmax]), NN, args.p, args.verbose)
 print("Generating mesh took", t.elapsed()[0])
 
 if args.verbose:
@@ -174,11 +153,8 @@ else:
     h = max((xmax - xmin) / args.N)
 
 # Setup boundary traction and rhs
-# g.interpolate(u_exact(np))
 g = u_exact(ufl)(x)
 f = -ufl.div(ufl.grad(u_exact(ufl)(x)))
-# g.interpolate(lambda x: 0.0 + 1e-14 * x[0])
-# f.interpolate(lambda x: 1.0 + 1e-14 * x[0])
 
 # PDE
 betaN = args.betaN * args.p**2
@@ -189,13 +165,15 @@ a_bdry = (
     -inner(dot(n, grad(u)), v) - inner(u, dot(n, grad(v))) + inner(betaN / h * u, v)
 )
 L_bdry = -inner(g, dot(n, grad(v))) + inner(betaN / h * g, v)
-a_stab = betas * avg(h) ** (2 * args.gamma) * inner(jump(n, grad(u)), jump(n, grad(v)))
+
+# Stabilization
+a_stab = betas * avg(h) * inner(jump(n, grad(u)), jump(n, grad(v)))
 if args.p == 2:
     a_stab += (
-        betas
-        * avg(h) ** (2 * args.gamma)
-        * inner(jump(n, grad(grad(u))), jump(n, grad(grad(v))))
+        betas * avg(h) ** 3 * inner(jump(n, grad(grad(u))), jump(n, grad(grad(v))))
     )
+elif args.p > 2:
+    raise RuntimeError("No stab yet for elements higher than quadratic")
 
 # Standard measures
 dS = ufl.dS(subdomain_data=facetags, domain=mesh)
@@ -242,11 +220,11 @@ bc2 = cq.assemble_vector(L2, qr_bdry)
 b += bc2
 
 if args.verbose:
-    cq.utils.dump(args.output + "/A.txt", A)
-    cq.utils.dump(args.output + "/b.txt", b)
-    cq.utils.dump(args.output + "/bx.txt", bx)
-    cq.utils.dump(args.output + "/bc1.txt", bc1)
-    cq.utils.dump(args.output + "/bc2.txt", bc2)
+    cq.debug_utils.dump(args.output + "/A.txt", A)
+    cq.debug_utils.dump(args.output + "/b.txt", b)
+    cq.debug_utils.dump(args.output + "/bx.txt", bx)
+    cq.debug_utils.dump(args.output + "/bc1.txt", bc1)
+    cq.debug_utils.dump(args.output + "/bc2.txt", bc2)
 
 assert np.isfinite(b.array).all()
 assert np.isfinite(A.norm())
@@ -259,36 +237,50 @@ t = dolfinx.common.Timer()
 A = cq.utils.lock_inactive_dofs(inactive_dofs, A)
 print("Lock inactive dofs took", t.elapsed()[0])
 if args.verbose:
-    cq.utils.dump(args.output + "/A_locked.txt", A)
+    cq.debug_utils.dump(args.output + "/A_locked.txt", A)
 assert np.isfinite(A.norm()).all()
 
 
 def mumps(A, b):
     # Direct solver using mumps
+    print("Start solve using mumps")
     ksp = PETSc.KSP().create(mesh.comm)
-    ksp.setOperators(A)
     ksp.setType("preonly")
     ksp.getPC().setType("lu")
     ksp.getPC().setFactorSolverType("mumps")
-    vec = b.copy()
+    opts = PETSc.Options()  # type: ignore
+    opts["mat_mumps_icntl_14"] = 80  # Increase MUMPS working memory
+    opts["mat_mumps_icntl_24"] = (
+        1  # Option to support solving a singular matrix (pressure nullspace)
+    )
+    opts["mat_mumps_icntl_25"] = (
+        0  # Option to support solving a singular matrix (pressure nullspace)
+    )
+    opts["ksp_error_if_not_converged"] = 1
+    ksp.setFromOptions()
+    ksp.setOperators(A)
+    vec = A.createVecRight()
     ksp.solve(b, vec)
     vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     return vec
 
 
 def cg(A, b):
-    # Iterative solver using cg/gamg
+    # Iterative solver using eg cg/gamg (or jacobi to save memory)
     opts = PETSc.Options()
     opts["ksp_type"] = "cg"
-    opts["ksp_rtol"] = 1.0e-10
-    opts["pc_type"] = "gamg"
+    opts["ksp_rtol"] = 1.0e-4
+    opts["ksp_max_it"] = A.size[0]
+    # opts["pc_type"] = "gamg"
+    opts["pc_type"] = "jacobi"
+    print("Start solve using", opts["ksp_type"], opts["pc_type"])
     ksp = PETSc.KSP().create(mesh.comm)
     ksp.setFromOptions()
     ksp.setOperators(A)
-    vec = b.copy()
-    # ksp.setMonitor(
-    #     lambda _, its, rnorm: print(f"Iteration: {its}, rel. residual: {rnorm}")
-    # )
+    vec = A.createVecRight()
+    ksp.setMonitor(
+        lambda _, its, rnorm: print(f"Iteration: {its}, rel. residual: {rnorm}")
+    )
     ksp.solve(b, vec)
     vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     return vec
@@ -312,9 +304,7 @@ uh = dolfinx.fem.Function(V)
 uh.vector.setArray(vec.array)
 uh.name = "uh"
 cq.utils.writeXDMF(args.output + "/poisson" + str(args.N) + ".xdmf", mesh, uh)
-assert np.isfinite(vec.array).all()
 assert np.isfinite(uh.vector.array).all()
-
 
 # L2 errors: beware of cancellation
 t = dolfinx.common.Timer()
