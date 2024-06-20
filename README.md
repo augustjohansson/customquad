@@ -34,7 +34,6 @@ library:
 docker build -f docker/Dockerfile -t customquad .
 docker run -it -v `pwd`:/root customquad bash -i
 pip3 install . -U
-export CC="/usr/lib/ccache/g++ -fpermissive"
 ```
 
 Please use the provided docker file based on the dolfinx docker
@@ -47,14 +46,7 @@ Then install the customquad module using pip, e.g.,
 ```
 pip3 install . -U
 ```
-Compiling the ffcx forms with runtime quadrature requires a C++
-compiler, whereas standard ffcx forms is compiled using a C
-compiler. For now we simply overwrite the C compiler with a C++
-compiler. In addition, since C++ forbids pointer and integer
-comparison, the -fpermissive flag must be set.
-```
-export CC="/usr/lib/ccache/g++ -fpermissive"
-```
+
 A bashrc file with useful aliases is provided in the utils directory.
 
 ## Installation (dev)
