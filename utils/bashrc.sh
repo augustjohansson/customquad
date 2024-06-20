@@ -21,8 +21,7 @@ chown root:root /root/.cache/pip/
 alias install-customquad='pushd . && \
                           cd /root && \
                           pip3 install . -U && \
-                          popd && \
-			  export CC="/usr/lib/ccache/g++ -fpermissive"'
+                          popd'
 
 alias clear-cache='mkdir -p /root/.cache/fenics && \
                    rm -f /root/.cache/fenics/* && \
