@@ -285,7 +285,7 @@ bx = dolfinx.fem.petsc.assemble_vector(Lx)
 # Integration using custom assembler (i.e. integrals over cut cells,
 # both cut bulk part and bdry part)
 dx_cut = ufl.dx(metadata={"quadrature_rule": "runtime"}, domain=mesh)
-ds_cut = ufl.dx(
+ds_cut = ufl.ds(
     subdomain_data=celltags, metadata={"quadrature_rule": "runtime"}, domain=mesh
 )
 
