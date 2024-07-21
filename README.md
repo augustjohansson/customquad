@@ -18,10 +18,6 @@ In addition to dolfinx (https://github.com/FEniCS/dolfinx/) and basix
 extent on a fork of ffcx at
 - https://github.com/augustjohansson/ffcx-custom
 
-A small change is made to ufl to allow for normals in cell
-integrals. To this end, this fork of ufl is needed
-- https://github.com/augustjohansson/ufl-custom
-
 Some of the demos use the Algoim library for obtaining quadrature
 rules. It is found at
 - https://algoim.github.io
@@ -34,7 +30,6 @@ library:
 docker build -f docker/Dockerfile -t customquad .
 docker run -it -v `pwd`:/root customquad bash -i
 pip3 install . -U
-export CC="/usr/lib/ccache/g++ -fpermissive"
 ```
 
 Please use the provided docker file based on the dolfinx docker
@@ -47,14 +42,7 @@ Then install the customquad module using pip, e.g.,
 ```
 pip3 install . -U
 ```
-Compiling the ffcx forms with runtime quadrature requires a C++
-compiler, whereas standard ffcx forms is compiled using a C
-compiler. For now we simply overwrite the C compiler with a C++
-compiler. In addition, since C++ forbids pointer and integer
-comparison, the -fpermissive flag must be set.
-```
-export CC="/usr/lib/ccache/g++ -fpermissive"
-```
+
 A bashrc file with useful aliases is provided in the utils directory.
 
 ## Installation (dev)
@@ -65,12 +53,10 @@ most challenging part. I have the following setup:
 git clone git@github.com:augustjohansson/customquad.git
 cd customquad
 git clone git@github.com:augustjohansson/ffcx-custom.git
-git clone git@github.com:augustjohansson/ufl-custom.git
 git config --global --add safe.directory /root/ffcx-custom
 ```
 Then I start the container and use the `install-all` alias in the
-provided bashrc.sh to install ffcx, ufl and customquad, as well as
-overriding the C compiler with a C++ compiler as described above.
+provided bashrc.sh to install ffcx and customquad.
 
 ## How to contribute
 
@@ -175,7 +161,7 @@ void tabulate_tensor_integral_3edb7c068402923a697d72e1b03e0957554f29c3(double* A
 }
 ```
 The `call_basix` function is a C++ function that evaluates the basis
-(and derivatives) using basix (see `call_basix.hpp`). There's room for
+(and derivatives) using basix (see `call_basix.h`). There's room for
 improvement here: one call to `call_basix` should be sufficient. Note
 that evaluating the Jacobian needs derivatives of the basis. The fixed
 arguments to `call_basix` include type of basis function, which

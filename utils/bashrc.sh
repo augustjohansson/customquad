@@ -21,8 +21,7 @@ chown root:root /root/.cache/pip/
 alias install-customquad='pushd . && \
                           cd /root && \
                           pip3 install . -U && \
-                          popd && \
-			  export CC="/usr/lib/ccache/g++ -fpermissive"'
+                          popd'
 
 alias clear-cache='mkdir -p /root/.cache/fenics && \
                    rm -f /root/.cache/fenics/* && \
@@ -32,11 +31,6 @@ alias clear-cache='mkdir -p /root/.cache/fenics && \
 
 # Aliases for dev installation
 
-alias install-ufl='pushd . && \
-                   cd /root/ufl-custom && \
-                   pip3 install -v . -U --force-reinstall && \
-                   popd'
-
 alias install-ffcx='pushd . && \
                     cd /root/ffcx-custom && \
                     git checkout august/customquad && \
@@ -44,6 +38,5 @@ alias install-ffcx='pushd . && \
                     popd'
 
 alias install-all='clear-cache && \
-                   install-ufl && \
                    install-ffcx && \
 		   install-customquad'
