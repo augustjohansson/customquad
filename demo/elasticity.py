@@ -85,18 +85,6 @@ gdim = len(xmin)
 
 # Mesh
 NN = np.array([args.N] * gdim, dtype=np.int32)
-# if gdim == 2:
-#     cell_type = dolfinx.mesh.CellType.quadrilateral
-#     mesh_generator = dolfinx.mesh.create_rectangle
-# else:
-#     cell_type = dolfinx.mesh.CellType.hexahedron
-#     mesh_generator = dolfinx.mesh.create_box
-# print(f"{NN=}")
-# print(f"{xmin=}")
-# print(f"{xmax=}")
-# mesh = mesh_generator(MPI.COMM_WORLD, np.array([xmin, xmax]), NN, cell_type)
-# assert mesh.geometry.dim == gdim
-
 mesh = cq.create_mesh(np.array([xmin, xmax]), NN, args.p, args.verbose)
 
 # Generate qr
@@ -146,51 +134,26 @@ with dolfinx.io.XDMFFile(mesh.comm, args.output + f"/msh{args.N}.xdmf", "w") as 
     xdmf.write_meshtags(facetags)
 
 
-# def u_exact_x(backend):
-#     if gdim == 2:
-#         return lambda x: backend.sin(backend.pi * x[0]) * backend.sin(backend.pi * x[1])
-#     else:
-#         return (
-#             lambda x: backend.sin(backend.pi * x[0])
-#             * backend.sin(backend.pi * x[1])
-#             * backend.sin(backend.pi * x[2])
-#         )
+def u_exact(m):
+    def u_fcn(x):
+        if mesh.geometry.dim == 2:
+            return [
+                m.cos((m.pi * x[1])) * m.sin((m.pi * x[0])),
+                m.sin((m.pi * x[0])) * m.sin((m.pi * x[1])),
+            ]
+        else:
+            return [
+                m.cos(m.pi * x[1]) * m.sin(m.pi * x[0]) * m.sin(m.pi * x[2]),
+                m.sin(m.pi * x[0]) * m.sin(m.pi * x[1]) * m.sin(m.pi * x[2]),
+                m.sin(m.pi * x[0]) * m.sin(m.pi * x[1]) * m.cos(m.pi * x[2]),
+            ]
 
-
-# def u_exact_y(backend):
-#     if gdim == 2:
-#         return lambda x: backend.sin(backend.pi * x[0]) * backend.sin(backend.pi * x[1])
-#     else:
-#         return (
-#             lambda x: backend.sin(backend.pi * x[0])
-#             * backend.sin(backend.pi * x[1])
-#             * backend.sin(backend.pi * x[2])
-#         )
-
-
-# def u_exact(backend):
-#     if backend.__name__ == "numpy":
-#         return lambda x: np.stack((u_exact_x(backend)(x), u_exact_y(backend)(x)))
-#     elif backend.__name__ == "ufl":
-#         return ufl.as_vector([u_exact_x(backend), u_exact_y(backend)])
-#     else:
-#         raise RuntimeError("Unknown backend", backend)
-
-x = ufl.SpatialCoordinate(mesh)
-LX = xmax[0] - xmin[0]
-LY = xmax[1] - xmin[1]
-u_ufl = ufl.as_vector(
-    [
-        ufl.cos((ufl.pi * x[1]) / LY) * ufl.sin((ufl.pi * x[0]) / LX),
-        ufl.sin((ufl.pi * x[0]) / LX) * ufl.sin((ufl.pi * x[1]) / LY),
-    ]
-)
-u_np = lambda x: np.stack(
-    [
-        np.cos((np.pi * x[1]) / LY) * np.sin((np.pi * x[0]) / LX),
-        np.sin((np.pi * x[0]) / LX) * np.sin((np.pi * x[1]) / LY),
-    ]
-)
+    if m == ufl:
+        return ufl.as_vector(u_fcn(ufl.SpatialCoordinate(mesh)))
+    elif m == np:
+        return lambda x: np.stack(u_fcn(x))
+    else:
+        raise RuntimeError("Unknown mule for backend", m)
 
 
 E = 1
@@ -219,8 +182,8 @@ else:
     h = max((xmax - xmin) / args.N)
 
 # Data
-g = u_ufl
-f = -ufl.nabla_div(sigma(u_ufl))
+g = u_exact(ufl)
+f = -ufl.nabla_div(sigma(u_exact(ufl)))
 
 # PDE
 betaN = args.betaN
@@ -233,19 +196,6 @@ a_bdry = (
     + betaN / h * inner((2 * mu + lmbda) * u, v)
 )
 L_bdry = -inner(g, dot(n, sigma(v))) + betaN / h * inner((2 * mu + lmbda) * g, v)
-# a_stab = betas * avg(h) * inner(jump(sigma(u)), jump(grad(v)))
-
-# Stab from Poisson:
-# a_stab = betas * avg(h) * inner(jump(n, nabla_grad(u)), jump(n, nabla_grad(v)))
-# if args.p == 2:
-#     a_stab += (
-#         betas
-#         * avg(h) ** 3
-#         * inner(
-#             jump(n, nabla_grad(nabla_grad(u))),
-#             jump(n, nabla_grad(nabla_grad(v))),
-#         )
-#     )
 
 
 def tensor_jump(v, n):
@@ -336,20 +286,29 @@ uh = dolfinx.fem.Function(V)
 uh.name = "uh"
 
 if gdim == 2:
-
     # Direct solver using mumps
+    print("Start solve using mumps")
     ksp = PETSc.KSP().create(mesh.comm)
-    ksp.setOperators(A)
     ksp.setType("preonly")
     ksp.getPC().setType("lu")
     ksp.getPC().setFactorSolverType("mumps")
-    vec = b.copy()
+    opts = PETSc.Options()  # type: ignore
+    opts["mat_mumps_icntl_14"] = 80  # Increase MUMPS working memory
+    opts["mat_mumps_icntl_24"] = (
+        1  # Option to support solving a singular matrix (pressure nullspace)
+    )
+    opts["mat_mumps_icntl_25"] = (
+        0  # Option to support solving a singular matrix (pressure nullspace)
+    )
+    opts["ksp_error_if_not_converged"] = 1
+    ksp.setFromOptions()
+    ksp.setOperators(A)
+    vec = A.createVecRight()
     ksp.solve(b, vec)
     vec.ghostUpdate(addv=PETSc.InsertMode.INSERT, mode=PETSc.ScatterMode.FORWARD)
     uh.vector.setArray(vec.array)
 
 else:
-
     # Solve as in demo_elasticity.py in dolfinx
     null_space = build_nullspace(V)
     A.setNearNullSpace(null_space)
@@ -417,7 +376,7 @@ if gdim == 2:
     err = np.empty((uh_vals.shape[0], 4))
     err[:, 0:2] = pts[:, 0:2]
     xy = [pts[:, 0], pts[:, 1]]
-    uxy = u_np(xy)
+    uxy = u_exact(np)(xy)
     err[:, 2] = abs(uh_vals[:, 0] - uxy[0])
     err[:, 3] = abs(uh_vals[:, 1] - uxy[1])
     np.savetxt(filename, err)
@@ -431,16 +390,16 @@ with dolfinx.io.XDMFFile(mesh.comm, args.output + "/displacements.xdmf", "w") as
 
 # L2 errors: beware of cancellation
 t = dolfinx.common.Timer()
-L2_integrand = (uh - u_ufl) ** 2
+L2_integrand = (uh - u_exact(ufl)) ** 2
 L2_err = np.sqrt(
     cq.utils.assemble_cut_uncut(L2_integrand, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag)
 )
-# L2_err = cq.utils.error_L2(uh, u_ufl, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag)
+# L2_err = cq.utils.error_L2(uh, u_exact(ufl), dx_cut, qr_bulk, dx_uncut, uncut_cell_tag)
 print("Computing L2 errors took", t.elapsed()[0])
 
 # H10 errors
 t = dolfinx.common.Timer()
-H10_integrand = (nabla_grad(uh) - nabla_grad(u_ufl)) ** 2
+H10_integrand = (nabla_grad(uh) - nabla_grad(u_exact(ufl))) ** 2
 H10_err = np.sqrt(
     cq.utils.assemble_cut_uncut(
         H10_integrand, dx_cut, qr_bulk, dx_uncut, uncut_cell_tag
