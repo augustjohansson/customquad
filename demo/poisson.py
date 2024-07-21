@@ -355,6 +355,12 @@ if gdim == 2:
     filename = args.output + "/err" + str(args.N) + ".txt"
     np.savetxt(filename, err)
 
+    if args.verbose:
+        filename = args.output + "/xyz" + str(args.N) + ".txt"
+        np.savetxt(filename, np.reshape(cq.utils.flatten(xyz), (-1, gdim)))
+        filename = args.output + "/xyz_bdry" + str(args.N) + ".txt"
+        np.savetxt(filename, np.reshape(cq.utils.flatten(xyz_bdry), (-1, gdim)))
+
 # Print
 h = dolfinx.cpp.mesh.h(mesh, mesh.topology.dim, cut_cells)
 conv = np.array(
