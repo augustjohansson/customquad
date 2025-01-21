@@ -24,7 +24,7 @@ rules. It is found at
 
 ## Installation (non-dev)
 
-In short, the following four steps is recommended to install the
+In short, the following steps is recommended to install the
 library:
 ```
 docker build -f docker/Dockerfile -t customquad .
