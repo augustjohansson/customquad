@@ -58,11 +58,19 @@ git clone git@github.com:augustjohansson/customquad.git --branch august/high-ord
 cd customquad
 git clone git@github.com:augustjohansson/ufl-custom.git
 git clone git@github.com:augustjohansson/ffcx-custom.git --branch august/customquad
+```
+Start the container, for example with
+```
+docker run -it -v `pwd`:/root customquad-dev bash -i
+```
+In the container I then do
+```
+ln -s ~/utils/bashrc.sh ~/.bashrc
 git config --global --add safe.directory /root/ufl-custom
 git config --global --add safe.directory /root/ffcx-custom
+install-all
 ```
-Then I start the container and use the `install-all` alias in the
-provided bashrc.sh to install ufl, ffcx and customquad.
+where `install-all` is an alias for installing ufl, ffcx and customquad.
 
 ## How to contribute
 
