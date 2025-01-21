@@ -116,7 +116,7 @@ with dolfinx.io.XDMFFile(mesh.comm, args.output + f"/msh{args.N}.xdmf", "w") as 
     xdmf.write_meshtags(facetags)
 
 # Check functional assembly
-ds_cut = ufl.ds(
+ds_cut = ufl.dx(
     subdomain_data=celltags, metadata={"quadrature_rule": "runtime"}, domain=mesh
 )
 dx_cut = ufl.dx(metadata={"quadrature_rule": "runtime"}, domain=mesh)

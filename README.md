@@ -18,6 +18,10 @@ In addition to dolfinx (https://github.com/FEniCS/dolfinx/) and basix
 extent on a fork of ffcx at
 - https://github.com/augustjohansson/ffcx-custom
 
+A small change is made to ufl to allow for normals in cell
+integrals. To this end, this fork of ufl is needed
+- https://github.com/augustjohansson/ufl-custom
+
 Some of the demos use the Algoim library for obtaining quadrature
 rules. It is found at
 - https://algoim.github.io
@@ -50,13 +54,15 @@ A bashrc file with useful aliases is provided in the utils directory.
 For the development of this library, the development of ffcx is the
 most challenging part. I have the following setup:
 ```
-git clone git@github.com:augustjohansson/customquad.git
+git clone git@github.com:augustjohansson/customquad.git --branch august/high-order
 cd customquad
-git clone git@github.com:augustjohansson/ffcx-custom.git
+git clone git@github.com:augustjohansson/ufl-custom.git
+git clone git@github.com:augustjohansson/ffcx-custom.git --branch august/customquad
+git config --global --add safe.directory /root/ufl-custom
 git config --global --add safe.directory /root/ffcx-custom
 ```
 Then I start the container and use the `install-all` alias in the
-provided bashrc.sh to install ffcx and customquad.
+provided bashrc.sh to install ufl, ffcx and customquad.
 
 ## How to contribute
 
@@ -106,11 +112,11 @@ such as `libffcx_forms_...c` which contaian standard tabulate tensor
 functions that may look like
 ```cpp
 void tabulate_tensor_integral_a0f3282139356df733c38db2e5d422f3272a1d5c(double*  A,
-				    const double*  w,
-				    const double*  c,
-				    const double*  coordinate_dofs,
-				    const int*  entity_local_index,
-				    const uint8_t*  quadrature_permutation)
+					const double*  w,
+					const double*  c,
+					const double*  coordinate_dofs,
+					const int*  entity_local_index,
+					const uint8_t*  quadrature_permutation)
 {
   // Quadrature rules
   static const double weights_8c4[16] = { 0.03025074832140047, 0.05671296296296294, 0.05671296296296292, 0.03025074832140047, 0.05671296296296294, 0.1063233257526736, 0.1063233257526736, 0.05671296296296294, 0.05671296296296292, 0.1063233257526736, 0.1063233257526735, 0.05671296296296292, 0.03025074832140047, 0.05671296296296294, 0.05671296296296292, 0.03025074832140047 };
@@ -134,15 +140,15 @@ quadrature points.
 A tabulate tensor function with runtime quadrature may look like this:
 ```cpp
 void tabulate_tensor_integral_3edb7c068402923a697d72e1b03e0957554f29c3(double* A,
-				    const double* w,
-				    const double* c,
-				    const double* coordinate_dofs,
-				    const int* entity_local_index,
-				    const uint8_t* quadrature_permutation,
-				    int num_quadrature_points,
-				    const double* quadrature_points,
-				    const double* quadrature_weights,
-				    const double* quadrature_normals)
+					const double* w,
+					const double* c,
+					const double* coordinate_dofs,
+					const int* entity_local_index,
+					const uint8_t* quadrature_permutation,
+					int num_quadrature_points,
+					const double* quadrature_points,
+					const double* quadrature_weights,
+					const double* quadrature_normals)
 {
   // Quadrature rules
   const double* weights_8eb = quadrature_weights;
