@@ -27,6 +27,7 @@ class PostInstall(install):
         cmd = f"{compiler} {flags} {cppfile} -o {sofile} {libs}"
         print(cmd)
         subprocess.check_call(cmd, shell=True)
+        print("Finished PostInstall")
 
 
 setup(
