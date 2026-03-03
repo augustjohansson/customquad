@@ -1,0 +1,7 @@
+[submodule "ufl-custom"]
+	path = ufl-custom
+	url = git@github.com:augustjohansson/ufl-custom.git
+[submodule "ffcx-custom"]
+	path = ffcx-custom
+	url = git@github.com:augustjohansson/ffcx-custom.git
+	branch = august/customquad
