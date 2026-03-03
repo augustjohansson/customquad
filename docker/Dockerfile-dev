@@ -13,5 +13,10 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+COPY customquad/call_basix.h /usr/local/include/call_basix.h
+COPY customquad/call_basix.cpp /tmp/call_basix.cpp
+RUN g++ -std=c++20 -fPIC -shared /tmp/call_basix.cpp -o /usr/local/lib/libcall_basix.so \
+      -L/usr/local/lib -L/usr/local/dolfinx-real/lib -lbasix && ldconfig
+
 WORKDIR /work
 SHELL ["/bin/bash", "-lc"]
