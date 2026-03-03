@@ -1,0 +1,12 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile-dev
+    image: customquad-dev
+    working_dir: /work
+    volumes:
+      - ./:/work
+    stdin_open: true
+    tty: true
+    command: bash -lc "./docker/install-all.sh && exec bash -i"
